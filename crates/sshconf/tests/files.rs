@@ -77,3 +77,29 @@ fn same_second_backups_do_not_overwrite() {
 	assert_ne!(first, second);
 	assert_eq!(fs::read_to_string(second).unwrap(), "two\n");
 }
+
+#[test]
+fn leftover_temp_file_is_replaced() {
+	let dir = tempfile::tempdir().unwrap();
+	let config = dir.path().join("config");
+	fs::write(
+		dir.path().join(".config.hop-tmp"),
+		"stale half-written text",
+	)
+	.unwrap();
+	write_with_backup(&config, "Host a\n", "20261106-120000").unwrap();
+	assert_eq!(fs::read_to_string(&config).unwrap(), "Host a\n");
+	assert!(!dir.path().join(".config.hop-tmp").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn new_config_is_private() {
+	use std::os::unix::fs::PermissionsExt;
+
+	let dir = tempfile::tempdir().unwrap();
+	let config = dir.path().join("config");
+	write_with_backup(&config, "Host a\n", "20261106-120000").unwrap();
+	let mode = fs::metadata(&config).unwrap().permissions().mode();
+	assert_eq!(mode & 0o777, 0o600);
+}

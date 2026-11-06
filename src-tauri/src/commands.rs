@@ -127,6 +127,18 @@ fn check_name(name: &str) -> Result<(), String> {
 	}
 }
 
+/// `ssh -G` and online checks only ever run for hosts the config names. For an unknown name
+/// `ssh -G` would echo it back as the address, letting the page probe any machine.
+fn require_configured(set: &ConfigSet, name: &str) -> Result<(), String> {
+	check_name(name)?;
+	if set.file_for_host(name).is_some() {
+		Ok(())
+	}
+	else {
+		Err(format!("\"{name}\" is not a host in your SSH config"))
+	}
+}
+
 fn host_list(state: &AppState) -> Result<HostList, String> {
 	let set = state.load_config()?;
 	let usage = state
@@ -148,7 +160,7 @@ pub fn list_hosts(state: State<'_, AppState>) -> Result<HostList, String> {
 
 #[tauri::command]
 pub async fn host_detail(state: State<'_, AppState>, name: String) -> Result<HostDetail, String> {
-	check_name(&name)?;
+	require_configured(&state.load_config()?, &name)?;
 	let since = now() - 365 * SECONDS_PER_DAY;
 	let history = state
 		.history()?
@@ -336,9 +348,13 @@ pub fn set_favourite(
 }
 
 #[tauri::command]
-pub async fn check_status(names: Vec<String>) -> Result<Vec<HostStatus>, String> {
+pub async fn check_status(
+	state: State<'_, AppState>,
+	names: Vec<String>,
+) -> Result<Vec<HostStatus>, String> {
+	let set = state.load_config()?;
 	for name in &names {
-		check_name(name)?;
+		require_configured(&set, name)?;
 	}
 
 	tauri::async_runtime::spawn_blocking(move || {
@@ -412,4 +428,29 @@ pub fn save_settings(
 	*state.settings()? = settings;
 	hosts_changed(&app);
 	get_settings(state)
+}
+
+#[cfg(test)]
+mod tests {
+	use std::path::PathBuf;
+
+	use sshconf::{Document, LoadedFile};
+
+	use super::*;
+
+	#[test]
+	fn only_configured_hosts_are_resolved_or_checked() {
+		let set = ConfigSet {
+			files: vec![LoadedFile {
+				path: PathBuf::from("config"),
+				doc: Document::parse("Host nas\n\tHostName 10.0.0.2\n\nHost web1 web2\n"),
+				included: false,
+			}],
+			warnings: Vec::new(),
+		};
+		assert!(require_configured(&set, "nas").is_ok());
+		assert!(require_configured(&set, "example.com").is_err());
+		assert!(require_configured(&set, "web1").is_err());
+		assert!(require_configured(&set, "nas; calc").is_err());
+	}
 }
