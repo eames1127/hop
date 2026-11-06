@@ -1,0 +1,28 @@
+[package]
+name = "hop"
+version = "0.1.0"
+description = "Your SSH hosts as cards, one click to connect"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+name = "hop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+sshconf = { path = "../crates/sshconf" }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.37", features = ["bundled"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[dev-dependencies]
+tempfile = "3"
