@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+# Fixtures must keep their exact bytes (some are CRLF on purpose).
+crates/sshconf/tests/fixtures/** -text
+
+*.png binary
+*.ico binary
+*.icns binary
