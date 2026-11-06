@@ -1,0 +1,20 @@
+{
+	"$schema": "../gen/schemas/desktop-schema.json",
+	"identifier": "default",
+	"description": "The main window may call Hop's own commands and nothing else.",
+	"windows": ["main"],
+	"permissions": [
+		"core:default",
+		"allow-list-hosts",
+		"allow-host-detail",
+		"allow-connect",
+		"allow-save-host",
+		"allow-delete-host",
+		"allow-set-favourite",
+		"allow-check-status",
+		"allow-get-history",
+		"allow-clear-history",
+		"allow-get-settings",
+		"allow-save-settings"
+	]
+}

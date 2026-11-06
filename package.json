@@ -1,0 +1,42 @@
+{
+	"name": "hop",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"packageManager": "pnpm@9.15.9",
+	"scripts": {
+		"dev": "vite",
+		"build": "vue-tsc --noEmit && vite build",
+		"preview": "vite preview",
+		"tauri": "tauri",
+		"lint": "eslint .",
+		"lint:fix": "eslint . --fix",
+		"format:css": "prettier --write \"src/**/*.css\"",
+		"format:check": "prettier --check \"src/**/*.css\"",
+		"typecheck": "vue-tsc --noEmit",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@tauri-apps/api": "^2.12.4",
+		"vue": "^3.5.45"
+	},
+	"devDependencies": {
+		"@eslint/js": "^10.0.1",
+		"@stylistic/eslint-plugin": "^5.10.0",
+		"@tauri-apps/cli": "^2.12.4",
+		"@types/node": "^26.6.6",
+		"@vitejs/plugin-vue": "^6.0.10",
+		"@vue/test-utils": "^2.5.1",
+		"eslint": "^10.14.0",
+		"eslint-plugin-vue": "^10.12.0",
+		"globals": "^17.14.0",
+		"jsdom": "^31.0.0",
+		"prettier": "^3.9.10",
+		"typescript": "^6.0.3",
+		"typescript-eslint": "^8.72.1",
+		"vite": "^8.3.6",
+		"vitest": "^5.1.0",
+		"vue-eslint-parser": "^10.4.2",
+		"vue-tsc": "^3.3.14"
+	}
+}
