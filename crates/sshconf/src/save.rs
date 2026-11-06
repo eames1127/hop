@@ -32,7 +32,7 @@ pub fn write_with_backup(path: &Path, text: &str, stamp: &str) -> io::Result<Opt
 
 	let temp = dir.join(format!(".{file_name}.hop-tmp"));
 	{
-		let mut file = fs::File::create(&temp)?;
+		let mut file = create_private(&temp)?;
 		file.write_all(text.as_bytes())?;
 		file.sync_all()?;
 	}
@@ -76,6 +76,28 @@ fn prune_backups(dir: &Path, file_name: &str) -> io::Result<()> {
 	}
 
 	Ok(())
+}
+
+/// Creates the temporary file readable only by its owner, so the config is never briefly
+/// world-readable before its real permissions are copied over. A leftover file from a crash is
+/// removed first, because an existing file would keep its old, possibly wider, mode.
+fn create_private(path: &Path) -> io::Result<fs::File> {
+	match fs::remove_file(path) {
+		Ok(()) => {}
+		Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+		Err(error) => return Err(error),
+	}
+
+	let mut options = fs::OpenOptions::new();
+	options.write(true).create_new(true);
+	#[cfg(unix)]
+	{
+		use std::os::unix::fs::OpenOptionsExt;
+
+		options.mode(0o600);
+	}
+
+	options.open(path)
 }
 
 /// OpenSSH refuses configs others can write, so a new file keeps the old file's mode.
