@@ -15,6 +15,9 @@
 		"allow-get-history",
 		"allow-clear-history",
 		"allow-get-settings",
-		"allow-save-settings"
+		"allow-save-settings",
+		"allow-list-tunnels",
+		"allow-start-tunnel",
+		"allow-stop-tunnel"
 	]
 }

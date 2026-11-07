@@ -12,6 +12,9 @@ const COMMANDS: &[&str] = &[
 	"clear_history",
 	"get_settings",
 	"save_settings",
+	"list_tunnels",
+	"start_tunnel",
+	"stop_tunnel",
 ];
 
 fn main() {

@@ -5,8 +5,12 @@ mod platform;
 mod settings;
 mod status;
 mod tray;
+mod tunnels;
 
-use tauri::{AppHandle, Emitter, Manager, WindowEvent};
+use std::thread;
+use std::time::Duration;
+
+use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -41,6 +45,7 @@ pub fn run() {
 			let state = commands::AppState::new(app.handle())?;
 			app.manage(state);
 			tray::create(app.handle())?;
+			watch_tunnels(app.handle().clone());
 
 			if let Err(error) = app.global_shortcut().register(quick_shortcut) {
 				eprintln!(
@@ -77,9 +82,36 @@ pub fn run() {
 			commands::clear_history,
 			commands::get_settings,
 			commands::save_settings,
+			commands::list_tunnels,
+			commands::start_tunnel,
+			commands::stop_tunnel,
 		])
-		.run(tauri::generate_context!())
-		.expect("error while running Hop");
+		.build(tauri::generate_context!())
+		.expect("error while building Hop")
+		.run(|app, event| {
+			// Tunnels are child processes; without this they would hold ports open after Quit.
+			if let RunEvent::Exit = event {
+				if let Some(state) = app.try_state::<commands::AppState>() {
+					state.tunnels.stop_all();
+				}
+			}
+		});
+}
+
+/// Checks once a second for tunnels whose ssh has died, so the window can say why.
+fn watch_tunnels(app: AppHandle) {
+	thread::spawn(move || loop {
+		thread::sleep(Duration::from_secs(1));
+		let state = app.state::<commands::AppState>();
+		match state.tunnels.poll() {
+			Ok(true) => commands::tunnels_changed(&app),
+			Ok(false) => {}
+			Err(error) => {
+				eprintln!("hop: stopped watching tunnels: {error}");
+				break;
+			}
+		}
+	});
 }
 
 pub(crate) fn show_main(app: &AppHandle, quick: bool) {
