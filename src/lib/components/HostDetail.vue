@@ -3,12 +3,14 @@ import { ref, watch } from "vue";
 
 import { errorMessage, hostDetail } from "../api";
 import { relativeTime } from "../time";
-import type { Host, HostDetail, HostStatus } from "../types";
+import { findTunnel, forwardName, tunnelTitle } from "../tunnels";
+import type { Host, HostDetail, HostStatus, TunnelView } from "../types";
 import HistoryChart from "./HistoryChart.vue";
 
 const props = defineProps<{
 	host: Host;
 	status?: HostStatus;
+	tunnels: TunnelView[];
 }>();
 
 const emit = defineEmits<{
@@ -16,7 +18,12 @@ const emit = defineEmits<{
 	edit: [];
 	delete: [];
 	connect: [forward: number | null];
+	tunnel: [forward: number];
 }>();
+
+function tunnelAt(index: number): TunnelView | null {
+	return findTunnel(props.tunnels, props.host.name, index);
+}
 
 const detail = ref<HostDetail | null>(null);
 const loadError = ref<string | null>(null);
@@ -185,15 +192,33 @@ watch(
 					:key="index"
 				>
 					<button
-						class="button button--small"
-						@click="emit('connect', index)"
+						class="button button--small tunnel-button"
+						:class="`tunnel-button--${tunnelAt(index)?.state ?? 'idle'}`"
+						:title="tunnelTitle(forward, tunnelAt(index))"
+						@click="emit('tunnel', index)"
 					>
-						{{ forward.label || "Forward" }}
+						{{ forwardName(forward) }}
 					</button>
 					<code>localhost:{{ forward.localPort }} → {{ forward.remoteHost }}:{{
 						forward.remotePort }}</code>
+					<button
+						class="button button--small"
+						title="Open a terminal with this forward instead"
+						@click="emit('connect', index)"
+					>
+						In terminal
+					</button>
+					<span
+						v-if="tunnelAt(index)?.state === 'failed'"
+						class="error-text small tunnel-error"
+					>
+						{{ tunnelAt(index)?.error }}
+					</span>
 				</li>
 			</ul>
+			<p class="muted small">
+				Click a forward to run it in the background; click again to stop it.
+			</p>
 		</section>
 
 		<section

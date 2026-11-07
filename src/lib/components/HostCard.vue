@@ -2,19 +2,26 @@
 import { computed } from "vue";
 
 import { relativeTime } from "../time";
-import type { Host, HostStatus } from "../types";
+import { findTunnel, forwardName, tunnelTitle } from "../tunnels";
+import type { Host, HostStatus, TunnelView } from "../types";
 
 const props = defineProps<{
 	host: Host;
 	status?: HostStatus;
 	selected: boolean;
+	tunnels: TunnelView[];
 }>();
 
 const emit = defineEmits<{
 	connect: [forward: number | null];
+	tunnel: [forward: number];
 	select: [];
 	favourite: [value: boolean];
 }>();
+
+function tunnelAt(index: number): TunnelView | null {
+	return findTunnel(props.tunnels, props.host.name, index);
+}
 
 const address = computed(() => {
 	const host = props.host;
@@ -161,11 +168,12 @@ const sourceName = computed(() => props.host.source.split(/[\\/]/).pop() ?? prop
 			<button
 				v-for="(forward, index) in host.meta.forwards"
 				:key="index"
-				class="button button--small"
-				:title="`ssh -L ${forward.localPort}:${forward.remoteHost}:${forward.remotePort}`"
-				@click.stop="emit('connect', index)"
+				class="button button--small tunnel-button"
+				:class="`tunnel-button--${tunnelAt(index)?.state ?? 'idle'}`"
+				:title="tunnelTitle(forward, tunnelAt(index))"
+				@click.stop="emit('tunnel', index)"
 			>
-				{{ forward.label || `Forward ${forward.localPort}` }}
+				{{ forwardName(forward) }}
 			</button>
 		</div>
 	</article>

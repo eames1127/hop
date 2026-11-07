@@ -102,6 +102,19 @@ export interface SettingsView {
 	dataPath: string;
 }
 
+export type TunnelState = "running" | "failed";
+
+export interface TunnelView {
+	host: string;
+	forward: number;
+	localPort: number;
+	remoteHost: string;
+	remotePort: number;
+	label: string;
+	state: TunnelState;
+	error: string | null;
+}
+
 // How an import treats tags and port forwards the host already has.
 export type ListMode = "overwrite" | "merge";
 

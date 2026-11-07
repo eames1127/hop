@@ -6,6 +6,8 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
+use std::thread;
+use std::time::Duration;
 
 use chrono::{Local, Utc};
 use serde::{Deserialize, Serialize};
@@ -23,10 +25,15 @@ use crate::platform::{self, TerminalChoice};
 use crate::settings::Settings;
 use crate::status::{self, HostStatus};
 use crate::tray;
+use crate::tunnels::{self, TunnelState, TunnelView, Tunnels};
 
 const SECONDS_PER_DAY: i64 = 86_400;
 const MAX_HISTORY_DAYS: u32 = 3650;
 pub const HOSTS_CHANGED_EVENT: &str = "hosts-changed";
+pub const TUNNELS_CHANGED_EVENT: &str = "tunnels-changed";
+/// How long `start_tunnel` watches a new tunnel so quick failures come back as its result.
+const TUNNEL_SETTLE_CHECKS: u32 = 15;
+const TUNNEL_SETTLE_STEP: Duration = Duration::from_millis(100);
 
 pub struct AppState {
 	config_path: PathBuf,
@@ -37,6 +44,7 @@ pub struct AppState {
 	settings: Mutex<Settings>,
 	/// Only one save at a time, so two quick edits cannot race on the same file.
 	write_lock: Mutex<()>,
+	pub tunnels: Tunnels,
 	/// The checked notes file from the last import preview. Applying uses this copy, so the page
 	/// never sends notes or file paths back to be written.
 	pending_import: Mutex<Option<NotesFile>>,
@@ -64,6 +72,7 @@ impl AppState {
 			settings_path,
 			settings: Mutex::new(settings),
 			write_lock: Mutex::new(()),
+			tunnels: Tunnels::default(),
 			pending_import: Mutex::new(None),
 		})
 	}
@@ -437,6 +446,71 @@ pub fn save_settings(
 	*state.settings()? = settings;
 	hosts_changed(&app);
 	get_settings(state)
+}
+
+#[tauri::command]
+pub fn list_tunnels(state: State<'_, AppState>) -> Result<Vec<TunnelView>, String> {
+	state.tunnels.list()
+}
+
+/// Starts `ssh -N -L` for one saved forward, then watches it briefly so a busy port or a
+/// refused login comes back as the result rather than only through the change event.
+#[tauri::command]
+pub async fn start_tunnel(
+	app: AppHandle,
+	state: State<'_, AppState>,
+	name: String,
+	forward: usize,
+) -> Result<Vec<TunnelView>, String> {
+	let set = state.load_config()?;
+	require_configured(&set, &name)?;
+	let saved = set
+		.files
+		.iter()
+		.find_map(|file| file.doc.find_host(&name))
+		.and_then(|block| block.meta.forwards.get(forward).cloned())
+		.ok_or_else(|| "That port forward no longer exists".to_string())?;
+
+	let ssh = platform::ssh_program();
+	state.tunnels.start(&name, forward, &saved, |args| {
+		tunnels::spawn_ssh(&ssh, args)
+	})?;
+
+	for _ in 0..TUNNEL_SETTLE_CHECKS {
+		// Sleep on a blocking thread so the async runtime is not held up; Tauri has no timer
+		// of its own and using tokio's directly would add a dependency.
+		tauri::async_runtime::spawn_blocking(|| thread::sleep(TUNNEL_SETTLE_STEP))
+			.await
+			.map_err(|error| format!("The tunnel check stopped unexpectedly: {error}"))?;
+		state.tunnels.poll()?;
+		let running = state.tunnels.list()?.iter().any(|tunnel| {
+			tunnel.local_port == saved.local_port && tunnel.state == TunnelState::Running
+		});
+		if !running {
+			break;
+		}
+	}
+
+	tunnels_changed(&app);
+	state.tunnels.list()
+}
+
+/// Stops a running tunnel, or dismisses a failed one.
+#[tauri::command]
+pub fn stop_tunnel(
+	app: AppHandle,
+	state: State<'_, AppState>,
+	local_port: u16,
+) -> Result<Vec<TunnelView>, String> {
+	state.tunnels.stop(local_port)?;
+	tunnels_changed(&app);
+	state.tunnels.list()
+}
+
+pub fn tunnels_changed(app: &AppHandle) {
+	if let Err(error) = app.emit(TUNNELS_CHANGED_EVENT, ()) {
+		eprintln!("hop: could not notify the window: {error}");
+	}
 }
 
 const NOTES_FILTER_NAME: &str = "Hop notes";

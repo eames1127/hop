@@ -8,10 +8,14 @@ import {
 	errorMessage,
 	getSettings,
 	listHosts,
+	listTunnels,
 	onError,
 	onHostsChanged,
 	onQuickLaunch,
+	onTunnelsChanged,
 	setFavourite,
+	startTunnel,
+	stopTunnel,
 } from "../lib/api";
 import AddHostForm from "../lib/components/AddHostForm.vue";
 import HostCard from "../lib/components/HostCard.vue";
@@ -20,11 +24,13 @@ import SettingsPanel from "../lib/components/SettingsPanel.vue";
 import Sidebar from "../lib/components/Sidebar.vue";
 import { filterHosts, needsAttention, sortHosts, tagCounts, type Section } from "../lib/filter";
 import { applyTheme } from "../lib/theme";
-import type { Host, HostList, HostStatus } from "../lib/types";
+import { findTunnel, forwardName, tunnelAction } from "../lib/tunnels";
+import type { Host, HostList, HostStatus, TunnelView } from "../lib/types";
 
 const hosts = ref<Host[]>([]);
 const warnings = ref<string[]>([]);
 const statuses = ref<Map<string, HostStatus>>(new Map());
+const tunnels = ref<TunnelView[]>([]);
 const query = ref("");
 const section = ref<Section>("all");
 const tag = ref<string | null>(null);
@@ -118,6 +124,38 @@ async function connectTo(host: Host, forward: number | null): Promise<void> {
 	}
 }
 
+async function reloadTunnels(): Promise<void> {
+	try {
+		tunnels.value = await listTunnels();
+	}
+	catch (error) {
+		showToast(errorMessage(error));
+	}
+}
+
+async function toggleTunnel(host: Host, index: number): Promise<void> {
+	const current = findTunnel(tunnels.value, host.name, index);
+	try {
+		if (current && tunnelAction(current) === "stop") {
+			tunnels.value = await stopTunnel(current.localPort);
+			return;
+		}
+
+		tunnels.value = await startTunnel(host.name, index);
+		const started = findTunnel(tunnels.value, host.name, index);
+		const forward = host.meta.forwards[index];
+		if (started?.state === "failed") {
+			showToast(started.error ?? "The tunnel stopped straight away.");
+		}
+		else if (forward) {
+			showToast(`${forwardName(forward)} is open on localhost:${forward.localPort}.`);
+		}
+	}
+	catch (error) {
+		showToast(errorMessage(error));
+	}
+}
+
 async function toggleFavourite(host: Host, value: boolean): Promise<void> {
 	try {
 		applyList(await setFavourite(host.name, value));
@@ -175,7 +213,8 @@ onMounted(async () => {
 	unlisteners.push(await onHostsChanged(() => void reload()));
 	unlisteners.push(await onQuickLaunch(() => void focusSearch()));
 	unlisteners.push(await onError((message) => showToast(message)));
-	await Promise.all([reload(), loadTheme()]);
+	unlisteners.push(await onTunnelsChanged(() => void reloadTunnels()));
+	await Promise.all([reload(), loadTheme(), reloadTunnels()]);
 	void focusSearch();
 	void runStatusChecks();
 });
@@ -256,8 +295,10 @@ onUnmounted(() => {
 					:host="host"
 					:status="statuses.get(host.name)"
 					:selected="host.id === selectedId"
+					:tunnels="tunnels"
 					@select="selectedId = host.id"
 					@connect="connectTo(host, $event)"
+					@tunnel="toggleTunnel(host, $event)"
 					@favourite="toggleFavourite(host, $event)"
 				/>
 			</div>
@@ -278,10 +319,12 @@ onUnmounted(() => {
 			v-if="selected"
 			:host="selected"
 			:status="statuses.get(selected.name)"
+			:tunnels="tunnels"
 			@close="selectedId = null"
 			@edit="editing = selected"
 			@delete="remove(selected)"
 			@connect="connectTo(selected, $event)"
+			@tunnel="toggleTunnel(selected, $event)"
 		/>
 
 		<AddHostForm
