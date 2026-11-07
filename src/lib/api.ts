@@ -10,6 +10,7 @@ import type {
 	HostStatus,
 	Settings,
 	SettingsView,
+	TunnelView,
 } from "./types";
 
 export function listHosts(): Promise<HostList> {
@@ -54,6 +55,22 @@ export function getSettings(): Promise<SettingsView> {
 
 export function saveSettings(settings: Settings): Promise<SettingsView> {
 	return invoke("save_settings", { settings });
+}
+
+export function listTunnels(): Promise<TunnelView[]> {
+	return invoke("list_tunnels");
+}
+
+export function startTunnel(name: string, forward: number): Promise<TunnelView[]> {
+	return invoke("start_tunnel", { name, forward });
+}
+
+export function stopTunnel(localPort: number): Promise<TunnelView[]> {
+	return invoke("stop_tunnel", { localPort });
+}
+
+export function onTunnelsChanged(handler: () => void): Promise<UnlistenFn> {
+	return listen("tunnels-changed", handler);
 }
 
 export function onHostsChanged(handler: () => void): Promise<UnlistenFn> {

@@ -101,3 +101,16 @@ export interface SettingsView {
 	configPath: string;
 	dataPath: string;
 }
+
+export type TunnelState = "running" | "failed";
+
+export interface TunnelView {
+	host: string;
+	forward: number;
+	localPort: number;
+	remoteHost: string;
+	remotePort: number;
+	label: string;
+	state: TunnelState;
+	error: string | null;
+}
