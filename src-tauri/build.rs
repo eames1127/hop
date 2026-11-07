@@ -12,6 +12,10 @@ const COMMANDS: &[&str] = &[
 	"clear_history",
 	"get_settings",
 	"save_settings",
+	"export_notes",
+	"preview_notes_import",
+	"apply_notes_import",
+	"cancel_notes_import",
 ];
 
 fn main() {

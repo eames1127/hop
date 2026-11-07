@@ -8,6 +8,8 @@ import type {
 	HostInput,
 	HostList,
 	HostStatus,
+	ListMode,
+	NotesImportPreview,
 	Settings,
 	SettingsView,
 } from "./types";
@@ -54,6 +56,24 @@ export function getSettings(): Promise<SettingsView> {
 
 export function saveSettings(settings: Settings): Promise<SettingsView> {
 	return invoke("save_settings", { settings });
+}
+
+// The file dialogs open on the Rust side, so the page never handles file paths.
+// Each resolves to null when the dialog is cancelled.
+export function exportNotes(): Promise<number | null> {
+	return invoke("export_notes");
+}
+
+export function previewNotesImport(): Promise<NotesImportPreview | null> {
+	return invoke("preview_notes_import");
+}
+
+export function applyNotesImport(mode: ListMode): Promise<HostList> {
+	return invoke("apply_notes_import", { mode });
+}
+
+export function cancelNotesImport(): Promise<void> {
+	return invoke("cancel_notes_import");
 }
 
 export function onHostsChanged(handler: () => void): Promise<UnlistenFn> {
