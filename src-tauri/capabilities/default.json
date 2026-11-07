@@ -15,6 +15,10 @@
 		"allow-get-history",
 		"allow-clear-history",
 		"allow-get-settings",
-		"allow-save-settings"
+		"allow-save-settings",
+		"allow-export-notes",
+		"allow-preview-notes-import",
+		"allow-apply-notes-import",
+		"allow-cancel-notes-import"
 	]
 }

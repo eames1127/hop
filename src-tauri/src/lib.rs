@@ -37,6 +37,7 @@ pub fn run() {
 			Some(vec![MINIMISED_FLAG]),
 		))
 		.plugin(shortcut_plugin)
+		.plugin(tauri_plugin_dialog::init())
 		.setup(move |app| {
 			let state = commands::AppState::new(app.handle())?;
 			app.manage(state);
@@ -77,6 +78,10 @@ pub fn run() {
 			commands::clear_history,
 			commands::get_settings,
 			commands::save_settings,
+			commands::export_notes,
+			commands::preview_notes_import,
+			commands::apply_notes_import,
+			commands::cancel_notes_import,
 		])
 		.run(tauri::generate_context!())
 		.expect("error while running Hop");

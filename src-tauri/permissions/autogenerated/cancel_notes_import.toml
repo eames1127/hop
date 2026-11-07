@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-cancel-notes-import"
+description = "Enables the cancel_notes_import command without any pre-configured scope."
+commands.allow = ["cancel_notes_import"]
+
+[[permission]]
+identifier = "deny-cancel-notes-import"
+description = "Denies the cancel_notes_import command without any pre-configured scope."
+commands.deny = ["cancel_notes_import"]

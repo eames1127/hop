@@ -179,7 +179,7 @@ pub(crate) fn render_meta(meta: &HostMeta) -> Vec<String> {
 }
 
 /// Notes must stay on one line, or they could inject options into the config.
-fn single_line(text: &str) -> String {
+pub(crate) fn single_line(text: &str) -> String {
 	text.replace(['\r', '\n'], " ").trim().to_string()
 }
 
