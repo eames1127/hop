@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-preview-notes-import"
+description = "Enables the preview_notes_import command without any pre-configured scope."
+commands.allow = ["preview_notes_import"]
+
+[[permission]]
+identifier = "deny-preview-notes-import"
+description = "Denies the preview_notes_import command without any pre-configured scope."
+commands.deny = ["preview_notes_import"]

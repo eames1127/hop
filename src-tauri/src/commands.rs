@@ -3,6 +3,7 @@
 
 use std::error::Error;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use std::thread;
@@ -10,9 +11,13 @@ use std::time::Duration;
 
 use chrono::{Local, Utc};
 use serde::{Deserialize, Serialize};
-use sshconf::{is_valid_host_name, ConfigSet, Document, HostInput, ResolvedHost};
+use sshconf::{
+	is_valid_host_name, ConfigSet, Document, HostInput, ImportPreview, ListMode, NotesFile,
+	ResolvedHost, MAX_NOTES_FILE_BYTES,
+};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
+use tauri_plugin_dialog::DialogExt;
 
 use crate::history::{History, HistoryEntry};
 use crate::hosts::{build_views, HostView};
@@ -40,6 +45,9 @@ pub struct AppState {
 	/// Only one save at a time, so two quick edits cannot race on the same file.
 	write_lock: Mutex<()>,
 	pub tunnels: Tunnels,
+	/// The checked notes file from the last import preview. Applying uses this copy, so the page
+	/// never sends notes or file paths back to be written.
+	pending_import: Mutex<Option<NotesFile>>,
 }
 
 impl AppState {
@@ -65,6 +73,7 @@ impl AppState {
 			settings: Mutex::new(settings),
 			write_lock: Mutex::new(()),
 			tunnels: Tunnels::default(),
+			pending_import: Mutex::new(None),
 		})
 	}
 
@@ -502,6 +511,131 @@ pub fn tunnels_changed(app: &AppHandle) {
 	if let Err(error) = app.emit(TUNNELS_CHANGED_EVENT, ()) {
 		eprintln!("hop: could not notify the window: {error}");
 	}
+}
+
+const NOTES_FILTER_NAME: &str = "Hop notes";
+const NOTES_EXTENSIONS: &[&str] = &["json"];
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotesImportPreview {
+	file_name: String,
+	#[serde(flatten)]
+	preview: ImportPreview,
+}
+
+fn pending_import(state: &AppState) -> Result<MutexGuard<'_, Option<NotesFile>>, String> {
+	state
+		.pending_import
+		.lock()
+		.map_err(|_| "Importing is unavailable after an earlier error".to_string())
+}
+
+/// Shows the save dialog and writes the notes. Returns how many hosts were exported, or none
+/// when the dialog was cancelled.
+#[tauri::command]
+pub async fn export_notes(app: AppHandle) -> Result<Option<usize>, String> {
+	tauri::async_runtime::spawn_blocking(move || {
+		let state = app.state::<AppState>();
+		let file = sshconf::export_notes(&state.load_config()?);
+		// The file dialog runs here in Rust so the page never chooses a path to write.
+		let chosen = app
+			.dialog()
+			.file()
+			.add_filter(NOTES_FILTER_NAME, NOTES_EXTENSIONS)
+			.set_file_name("hop-notes.json")
+			.blocking_save_file();
+		let Some(chosen) = chosen
+		else {
+			return Ok(None);
+		};
+
+		let path = chosen
+			.into_path()
+			.map_err(|error| format!("Could not use that location: {error}"))?;
+		fs::write(&path, sshconf::to_json(&file))
+			.map_err(|error| format!("Could not save {}: {error}", path.display()))?;
+		Ok(Some(file.hosts.len()))
+	})
+	.await
+	.map_err(|error| format!("The export stopped unexpectedly: {error}"))?
+}
+
+fn read_notes_file(path: &Path) -> Result<NotesFile, String> {
+	let file = fs::File::open(path)
+		.map_err(|error| format!("Could not open {}: {error}", path.display()))?;
+	// Read one byte past the limit, so an oversized file is refused without loading all of it.
+	let mut text = String::new();
+	file.take(MAX_NOTES_FILE_BYTES + 1)
+		.read_to_string(&mut text)
+		.map_err(|error| format!("Could not read {}: {error}", path.display()))?;
+	sshconf::parse_notes(&text).map_err(|error| error.to_string())
+}
+
+/// Shows the open dialog, checks the chosen file and keeps it for `apply_notes_import`.
+/// Returns none when the dialog was cancelled.
+#[tauri::command]
+pub async fn preview_notes_import(app: AppHandle) -> Result<Option<NotesImportPreview>, String> {
+	tauri::async_runtime::spawn_blocking(move || {
+		let state = app.state::<AppState>();
+		*pending_import(&state)? = None;
+		let chosen = app
+			.dialog()
+			.file()
+			.add_filter(NOTES_FILTER_NAME, NOTES_EXTENSIONS)
+			.blocking_pick_file();
+		let Some(chosen) = chosen
+		else {
+			return Ok(None);
+		};
+
+		let path = chosen
+			.into_path()
+			.map_err(|error| format!("Could not use that file: {error}"))?;
+		let notes = read_notes_file(&path)?;
+		let preview = sshconf::preview_import(&state.load_config()?, &notes);
+		*pending_import(&state)? = Some(notes);
+		let file_name = path
+			.file_name()
+			.map(|name| name.to_string_lossy().into_owned())
+			.unwrap_or_default();
+		Ok(Some(NotesImportPreview { file_name, preview }))
+	})
+	.await
+	.map_err(|error| format!("The import stopped unexpectedly: {error}"))?
+}
+
+/// Applies the previewed file. Each config file it touches is saved once, with one backup.
+#[tauri::command]
+pub fn apply_notes_import(
+	app: AppHandle,
+	state: State<'_, AppState>,
+	mode: ListMode,
+) -> Result<HostList, String> {
+	let notes = pending_import(&state)?
+		.take()
+		.ok_or_else(|| "Choose a notes file to import first".to_string())?;
+	{
+		let _guard = state
+			.write_lock
+			.lock()
+			.map_err(|_| "Saving is unavailable after an earlier error".to_string())?;
+		let set = state.load_config()?;
+		let changed =
+			sshconf::apply_import(&set, &notes, mode).map_err(|error| error.to_string())?;
+		for (index, doc) in &changed {
+			write_doc(&set.files[*index].path, doc)?;
+		}
+	}
+
+	hosts_changed(&app);
+	host_list(&state)
+}
+
+#[tauri::command]
+pub fn cancel_notes_import(state: State<'_, AppState>) -> Result<(), String> {
+	*pending_import(&state)? = None;
+	Ok(())
 }
 
 #[cfg(test)]

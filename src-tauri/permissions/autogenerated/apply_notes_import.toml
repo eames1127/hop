@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-apply-notes-import"
+description = "Enables the apply_notes_import command without any pre-configured scope."
+commands.allow = ["apply_notes_import"]
+
+[[permission]]
+identifier = "deny-apply-notes-import"
+description = "Denies the apply_notes_import command without any pre-configured scope."
+commands.deny = ["apply_notes_import"]

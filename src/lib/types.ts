@@ -114,3 +114,12 @@ export interface TunnelView {
 	state: TunnelState;
 	error: string | null;
 }
+
+// How an import treats tags and port forwards the host already has.
+export type ListMode = "overwrite" | "merge";
+
+export interface NotesImportPreview {
+	fileName: string;
+	matched: string[];
+	unknown: string[];
+}

@@ -15,6 +15,10 @@ const COMMANDS: &[&str] = &[
 	"list_tunnels",
 	"start_tunnel",
 	"stop_tunnel",
+	"export_notes",
+	"preview_notes_import",
+	"apply_notes_import",
+	"cancel_notes_import",
 ];
 
 fn main() {

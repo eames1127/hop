@@ -1,8 +1,17 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 
-import { clearHistory, errorMessage, getSettings, saveSettings } from "../api";
-import type { Settings, SettingsView } from "../types";
+import {
+	applyNotesImport,
+	cancelNotesImport,
+	clearHistory,
+	errorMessage,
+	exportNotes,
+	getSettings,
+	previewNotesImport,
+	saveSettings,
+} from "../api";
+import type { ListMode, NotesImportPreview, Settings, SettingsView } from "../types";
 
 const emit = defineEmits<{
 	close: [];
@@ -14,6 +23,9 @@ const draft = ref<Settings | null>(null);
 const message = ref<string | null>(null);
 const failure = ref<string | null>(null);
 const busy = ref(false);
+const notesMessage = ref<string | null>(null);
+const importPreview = ref<NotesImportPreview | null>(null);
+const listMode = ref<ListMode>("merge");
 
 onMounted(async () => {
 	try {
@@ -54,6 +66,63 @@ async function clear(): Promise<void> {
 	try {
 		await clearHistory();
 		message.value = "History cleared.";
+	}
+	catch (error) {
+		failure.value = errorMessage(error);
+	}
+}
+
+function plural(count: number, word: string): string {
+	return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
+async function runNotes(action: () => Promise<void>): Promise<void> {
+	busy.value = true;
+	failure.value = null;
+	notesMessage.value = null;
+	try {
+		await action();
+	}
+	catch (error) {
+		failure.value = errorMessage(error);
+	}
+	finally {
+		busy.value = false;
+	}
+}
+
+function exportAll(): Promise<void> {
+	return runNotes(async () => {
+		const count = await exportNotes();
+		if (count !== null) {
+			notesMessage.value = `Exported notes for ${plural(count, "host")}.`;
+		}
+	});
+}
+
+function chooseImport(): Promise<void> {
+	return runNotes(async () => {
+		importPreview.value = await previewNotesImport();
+	});
+}
+
+function confirmImport(): Promise<void> {
+	const preview = importPreview.value;
+	if (preview === null) {
+		return Promise.resolve();
+	}
+
+	return runNotes(async () => {
+		await applyNotesImport(listMode.value);
+		importPreview.value = null;
+		notesMessage.value = `Imported notes for ${plural(preview.matched.length, "host")}.`;
+	});
+}
+
+async function closeImport(): Promise<void> {
+	importPreview.value = null;
+	try {
+		await cancelNotesImport();
 	}
 	catch (error) {
 		failure.value = errorMessage(error);
@@ -141,6 +210,39 @@ async function clear(): Promise<void> {
 				</section>
 
 				<section class="detail__section">
+					<h3>Notes</h3>
+					<p class="muted small">
+						Copy descriptions, tags, favourites and port forwards to another computer.
+						Addresses, users and key files are not included, but host aliases are, and
+						they may still reveal host names.
+					</p>
+					<div class="notes-io__buttons">
+						<button
+							type="button"
+							class="button"
+							:disabled="busy"
+							@click="exportAll"
+						>
+							Export…
+						</button>
+						<button
+							type="button"
+							class="button"
+							:disabled="busy"
+							@click="chooseImport"
+						>
+							Import…
+						</button>
+					</div>
+					<p
+						v-if="notesMessage"
+						class="muted small"
+					>
+						{{ notesMessage }}
+					</p>
+				</section>
+
+				<section class="detail__section">
 					<h3>Files</h3>
 					<p class="muted small">
 						SSH config: <code>{{ view.configPath }}</code>
@@ -172,5 +274,95 @@ async function clear(): Promise<void> {
 				</button>
 			</div>
 		</form>
+
+		<div
+			v-if="importPreview"
+			class="overlay"
+			@click.self="closeImport"
+		>
+			<div
+				class="dialog"
+				role="dialog"
+				aria-labelledby="import-title"
+				@keydown.esc.stop="closeImport"
+			>
+				<h2 id="import-title">
+					Import notes
+				</h2>
+				<p class="muted small">
+					From <code>{{ importPreview.fileName }}</code>. Hop keeps a backup of each
+					config file it changes, and never adds hosts from an import.
+				</p>
+
+				<template v-if="importPreview.matched.length > 0">
+					<h3>Will update {{ plural(importPreview.matched.length, "host") }}</h3>
+					<ul class="notes-io__list">
+						<li
+							v-for="alias in importPreview.matched"
+							:key="alias"
+						>
+							{{ alias }}
+						</li>
+					</ul>
+
+					<fieldset class="notes-io__mode">
+						<legend>Tags and port forwards already on these hosts</legend>
+						<label class="checkbox">
+							<input
+								v-model="listMode"
+								type="radio"
+								value="merge"
+							>
+							<span>Keep them and add the imported ones</span>
+						</label>
+						<label class="checkbox">
+							<input
+								v-model="listMode"
+								type="radio"
+								value="overwrite"
+							>
+							<span>Replace them with the imported ones</span>
+						</label>
+					</fieldset>
+				</template>
+				<p v-else>
+					None of the hosts in this file are in your SSH config.
+				</p>
+
+				<template v-if="importPreview.unknown.length > 0">
+					<h3>Skipping {{ plural(importPreview.unknown.length, "unknown host") }}</h3>
+					<p class="muted small">
+						These are not editable hosts in your SSH config. Add them first, then import
+						again.
+					</p>
+					<ul class="notes-io__list">
+						<li
+							v-for="alias in importPreview.unknown"
+							:key="alias"
+						>
+							{{ alias }}
+						</li>
+					</ul>
+				</template>
+
+				<div class="dialog__actions">
+					<button
+						type="button"
+						class="button"
+						@click="closeImport"
+					>
+						Cancel
+					</button>
+					<button
+						type="button"
+						class="button button--primary"
+						:disabled="busy || importPreview.matched.length === 0"
+						@click="confirmImport"
+					>
+						Import
+					</button>
+				</div>
+			</div>
+		</div>
 	</div>
 </template>
