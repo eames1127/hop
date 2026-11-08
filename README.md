@@ -82,10 +82,54 @@ Set `HOP_SSH_DIR` to point Hop at a copy of a config folder instead of your real
 | Check CSS formatting | `pnpm format:check` |
 | Format Rust | `cargo +nightly fmt --all` |
 | Lint Rust | `cargo clippy --workspace --all-targets -- -D warnings` |
+| End-to-end smoke test (Windows) | `pnpm test:e2e` |
 
 The code style (tabs, Stroustrup braces, braces on every `if`, 100-column lines) is enforced by
 ESLint, Prettier (CSS only) and rustfmt, and checked in CI. Vue components keep their styles in
 `src/styles/` rather than `<style>` blocks, so Prettier never has to format TypeScript.
+
+### Developing on Windows
+
+1. Install the prerequisites:
+   - Rust through [rustup](https://rustup.rs/) (stable, plus `rustup toolchain install nightly
+     --component rustfmt` for formatting).
+   - The Microsoft C++ Build Tools with the "Desktop development with C++" workload.
+   - The WebView2 runtime (already present on Windows 11).
+   - Node.js 22 or later.
+   - pnpm 9.15.9: `npm install -g pnpm@9.15.9`. Avoid `corepack enable`, which often fails
+     with `EPERM` because it writes into the Node install folder.
+2. Close and reopen your terminals (and editor) after installing Rust, so `cargo` is on `PATH`.
+3. From the repository folder:
+
+   ```bash
+   pnpm install
+   pnpm tauri dev
+   ```
+
+   `pnpm tauri build --debug` builds a debug app (and installers) without starting the dev server.
+
+To try Hop against a test config rather than your own, point `HOP_SSH_DIR` at a folder holding a
+`config` file before starting it, for example in PowerShell:
+
+```powershell
+$env:HOP_SSH_DIR = "$PWD\e2e\fixtures\ssh"
+pnpm tauri dev
+```
+
+### End-to-end smoke test
+
+`pnpm test:e2e` launches the debug build (`target\debug\hop.exe`) against a copy of
+`e2e/fixtures/ssh`, with WebView2 remote debugging on port 9333, and checks that the cards render,
+search filters them and an invalid host name is refused. It uses Node's built-in `fetch` and
+`WebSocket`, so it needs no extra packages. Build first and quit any running Hop, since a second
+instance just hands over to the first:
+
+```bash
+pnpm tauri build --debug --no-bundle
+pnpm test:e2e
+```
+
+`HOP_E2E_BINARY` and `HOP_E2E_PORT` override the app path and port. CI runs it on Windows.
 
 Releases are built by GitHub Actions when a `v*` tag is pushed, as a draft release.
 
