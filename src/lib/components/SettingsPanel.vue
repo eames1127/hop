@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 
 import {
 	applyNotesImport,
@@ -8,10 +8,18 @@ import {
 	errorMessage,
 	exportNotes,
 	getSettings,
+	listHosts,
 	previewNotesImport,
 	saveSettings,
 } from "../api";
-import type { ListMode, NotesImportPreview, Settings, SettingsView } from "../types";
+import {
+	buildSelection,
+	exportableHosts,
+	selectionCount,
+	type ExportMode,
+} from "../exportSelection";
+import { tagCounts } from "../filter";
+import type { Host, ListMode, NotesImportPreview, Settings, SettingsView } from "../types";
 
 const emit = defineEmits<{
 	close: [];
@@ -26,11 +34,26 @@ const busy = ref(false);
 const notesMessage = ref<string | null>(null);
 const importPreview = ref<NotesImportPreview | null>(null);
 const listMode = ref<ListMode>("merge");
+const hosts = ref<Host[]>([]);
+const exportMode = ref<ExportMode>("all");
+const exportNames = ref<string[]>([]);
+const exportTags = ref<string[]>([]);
+
+const exportChoices = computed(() => exportableHosts(hosts.value));
+const exportTagChoices = computed(() => tagCounts(exportChoices.value).map(([tag]) => tag));
+const selection = computed(() => buildSelection(
+	exportMode.value,
+	exportNames.value,
+	exportTags.value,
+));
+const exportCount = computed(() => selectionCount(hosts.value, selection.value));
 
 onMounted(async () => {
 	try {
-		view.value = await getSettings();
-		draft.value = { ...view.value.settings };
+		const [settings, list] = await Promise.all([getSettings(), listHosts()]);
+		view.value = settings;
+		draft.value = { ...settings.settings };
+		hosts.value = list.hosts;
 	}
 	catch (error) {
 		failure.value = errorMessage(error);
@@ -91,9 +114,9 @@ async function runNotes(action: () => Promise<void>): Promise<void> {
 	}
 }
 
-function exportAll(): Promise<void> {
+function exportChosen(): Promise<void> {
 	return runNotes(async () => {
-		const count = await exportNotes();
+		const count = await exportNotes(selection.value);
 		if (count !== null) {
 			notesMessage.value = `Exported notes for ${plural(count, "host")}.`;
 		}
@@ -191,11 +214,28 @@ async function closeImport(): Promise<void> {
 					<span>Start Hop in the tray when the computer starts</span>
 				</label>
 
+				<label class="checkbox">
+					<input
+						v-model="draft.autoStatusChecks"
+						type="checkbox"
+					>
+					<span>Check whether hosts are online when Hop opens</span>
+				</label>
+
 				<section class="detail__section">
 					<h3>History</h3>
 					<p class="muted small">
 						Hop records only the host name and time of each connection.
 					</p>
+					<label class="field">
+						<span>Keep history for</span>
+						<select v-model.number="draft.historyRetentionDays">
+							<option :value="30">30 days</option>
+							<option :value="90">90 days</option>
+							<option :value="365">365 days</option>
+							<option :value="0">Forever</option>
+						</select>
+					</label>
 					<button
 						type="button"
 						class="button button--danger"
@@ -216,12 +256,76 @@ async function closeImport(): Promise<void> {
 						Addresses, users and key files are not included, but host aliases are, and
 						they may still reveal host names.
 					</p>
+					<fieldset class="notes-io__mode">
+						<legend>Export</legend>
+						<label class="checkbox">
+							<input
+								v-model="exportMode"
+								type="radio"
+								value="all"
+							>
+							<span>All hosts with notes</span>
+						</label>
+						<label class="checkbox">
+							<input
+								v-model="exportMode"
+								type="radio"
+								value="hosts"
+							>
+							<span>Chosen hosts</span>
+						</label>
+						<div
+							v-if="exportMode === 'hosts'"
+							class="notes-io__choices"
+						>
+							<label
+								v-for="host in exportChoices"
+								:key="host.id"
+								class="checkbox"
+							>
+								<input
+									v-model="exportNames"
+									type="checkbox"
+									:value="host.name"
+								>
+								<span>{{ host.name }}</span>
+							</label>
+						</div>
+						<label class="checkbox">
+							<input
+								v-model="exportMode"
+								type="radio"
+								value="tags"
+							>
+							<span>Hosts with chosen tags</span>
+						</label>
+						<div
+							v-if="exportMode === 'tags'"
+							class="notes-io__choices"
+						>
+							<label
+								v-for="tag in exportTagChoices"
+								:key="tag"
+								class="checkbox"
+							>
+								<input
+									v-model="exportTags"
+									type="checkbox"
+									:value="tag"
+								>
+								<span>{{ tag }}</span>
+							</label>
+						</div>
+						<p class="muted small">
+							Will export {{ plural(exportCount, "host") }}.
+						</p>
+					</fieldset>
 					<div class="notes-io__buttons">
 						<button
 							type="button"
 							class="button"
-							:disabled="busy"
-							@click="exportAll"
+							:disabled="busy || exportCount === 0"
+							@click="exportChosen"
 						>
 							Export…
 						</button>

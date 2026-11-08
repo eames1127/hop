@@ -624,3 +624,13 @@ code {
 	border: 1px solid var(--line);
 	border-radius: 10px;
 }
+
+/* Indented under its radio button; scrolls so a long host list keeps the dialog usable. */
+.notes-io__choices {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	max-height: 160px;
+	padding-left: 24px;
+	overflow-y: auto;
+}

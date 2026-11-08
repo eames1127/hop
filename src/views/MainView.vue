@@ -25,7 +25,7 @@ import Sidebar from "../lib/components/Sidebar.vue";
 import { filterHosts, needsAttention, sortHosts, tagCounts, type Section } from "../lib/filter";
 import { applyTheme } from "../lib/theme";
 import { findTunnel, forwardName, tunnelAction } from "../lib/tunnels";
-import type { Host, HostList, HostStatus, TunnelView } from "../lib/types";
+import type { Host, HostList, HostStatus, Settings, TunnelView } from "../lib/types";
 
 const hosts = ref<Host[]>([]);
 const warnings = ref<string[]>([]);
@@ -38,6 +38,7 @@ const selectedId = ref<string | null>(null);
 const editing = ref<Host | null | undefined>(undefined);
 const showSettings = ref(false);
 const checking = ref(false);
+const autoStatusChecks = ref(true);
 const toast = ref<string | null>(null);
 const loadError = ref<string | null>(null);
 const searchInput = ref<HTMLInputElement | null>(null);
@@ -112,6 +113,29 @@ async function runStatusChecks(): Promise<void> {
 	finally {
 		checking.value = false;
 	}
+}
+
+async function checkOne(host: Host): Promise<void> {
+	try {
+		const [result] = await checkStatus([host.name]);
+		if (result) {
+			statuses.value = new Map(statuses.value).set(result.name, result);
+		}
+	}
+	catch (error) {
+		showToast(errorMessage(error));
+	}
+}
+
+function settingsSaved(settings: Settings): void {
+	applyTheme(settings.theme);
+	autoStatusChecks.value = settings.autoStatusChecks;
+	// Results from before checks were turned off would look current, so drop them.
+	if (!settings.autoStatusChecks) {
+		statuses.value = new Map();
+	}
+
+	void reload();
 }
 
 async function connectTo(host: Host, forward: number | null): Promise<void> {
@@ -200,9 +224,11 @@ function connectFirstMatch(): void {
 	}
 }
 
-async function loadTheme(): Promise<void> {
+async function loadSettings(): Promise<void> {
 	try {
-		applyTheme((await getSettings()).settings.theme);
+		const { settings } = await getSettings();
+		applyTheme(settings.theme);
+		autoStatusChecks.value = settings.autoStatusChecks;
 	}
 	catch (error) {
 		showToast(errorMessage(error));
@@ -214,9 +240,11 @@ onMounted(async () => {
 	unlisteners.push(await onQuickLaunch(() => void focusSearch()));
 	unlisteners.push(await onError((message) => showToast(message)));
 	unlisteners.push(await onTunnelsChanged(() => void reloadTunnels()));
-	await Promise.all([reload(), loadTheme(), reloadTunnels()]);
+	await Promise.all([reload(), loadSettings(), reloadTunnels()]);
 	void focusSearch();
-	void runStatusChecks();
+	if (autoStatusChecks.value) {
+		void runStatusChecks();
+	}
 });
 
 onUnmounted(() => {
@@ -260,7 +288,7 @@ onUnmounted(() => {
 					:disabled="checking"
 					@click="runStatusChecks"
 				>
-					{{ checking ? "Checking…" : "Check status" }}
+					{{ checking ? "Checking…" : "Check now" }}
 				</button>
 				<button
 					class="button button--primary"
@@ -319,7 +347,9 @@ onUnmounted(() => {
 			v-if="selected"
 			:host="selected"
 			:status="statuses.get(selected.name)"
+			:auto-status-checks="autoStatusChecks"
 			:tunnels="tunnels"
+			@check="checkOne(selected)"
 			@close="selectedId = null"
 			@edit="editing = selected"
 			@delete="remove(selected)"
@@ -337,7 +367,7 @@ onUnmounted(() => {
 		<SettingsPanel
 			v-if="showSettings"
 			@close="showSettings = false"
-			@saved="applyTheme($event.theme); reload()"
+			@saved="settingsSaved"
 		/>
 
 		<p

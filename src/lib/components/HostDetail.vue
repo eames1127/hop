@@ -10,6 +10,7 @@ import HistoryChart from "./HistoryChart.vue";
 const props = defineProps<{
 	host: Host;
 	status?: HostStatus;
+	autoStatusChecks: boolean;
 	tunnels: TunnelView[];
 }>();
 
@@ -19,6 +20,7 @@ const emit = defineEmits<{
 	delete: [];
 	connect: [forward: number | null];
 	tunnel: [forward: number];
+	check: [];
 }>();
 
 function tunnelAt(index: number): TunnelView | null {
@@ -111,7 +113,7 @@ watch(
 		<section class="detail__section">
 			<h3>Status</h3>
 			<p v-if="!status">
-				Not checked yet.
+				Not checked<span v-if="!autoStatusChecks">: automatic checks are off</span>.
 			</p>
 			<p v-else-if="status.state === 'online'">
 				Online<span v-if="status.latencyMs !== null"> ({{ status.latencyMs }} ms)</span>
@@ -119,6 +121,14 @@ watch(
 			<p v-else>
 				{{ status.state === "offline" ? "Offline" : "Unknown" }}: {{ status.detail }}
 			</p>
+			<button
+				v-if="host.editable"
+				type="button"
+				class="button"
+				@click="emit('check')"
+			>
+				Check now
+			</button>
 		</section>
 
 		<section class="detail__section">
