@@ -154,7 +154,10 @@ function describeProcesses() {
 	for (const [command, args] of [
 		["tasklist", ["/fi", "imagename eq hop.exe"]],
 		["tasklist", ["/fi", "imagename eq msedgewebview2.exe"]],
-		["netstat", ["-ano", "-p", "tcp"]],
+		["powershell", ["-NoProfile", "-Command", "Get-CimInstance Win32_Process"
+			+ " -Filter \"Name='msedgewebview2.exe'\""
+			+ " | Select-Object -First 1 -ExpandProperty CommandLine"]],
+		["reg", ["query", "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge", "/s"]],
 	]) {
 		const output = spawnSync(command, args, { encoding: "utf8" }).stdout ?? "";
 		console.error(`--- ${command} ${args.join(" ")}\n${output.trim()}`);
