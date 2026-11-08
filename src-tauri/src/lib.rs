@@ -1,4 +1,6 @@
 mod commands;
+#[cfg(debug_assertions)]
+mod debug_port;
 mod history;
 mod hosts;
 mod platform;
@@ -31,6 +33,10 @@ pub fn run() {
 			}
 		})
 		.build();
+
+	let context = tauri::generate_context!();
+	#[cfg(debug_assertions)]
+	let context = debug_port::apply(context);
 
 	tauri::Builder::default()
 		.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -91,7 +97,7 @@ pub fn run() {
 			commands::apply_notes_import,
 			commands::cancel_notes_import,
 		])
-		.build(tauri::generate_context!())
+		.build(context)
 		.expect("error while building Hop")
 		.run(|app, event| {
 			// Tunnels are child processes; without this they would hold ports open after Quit.

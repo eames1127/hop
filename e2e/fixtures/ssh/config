@@ -1,0 +1,14 @@
+Host alpha-web
+	# desc: Web server for the smoke test
+	# tags: e2e, web
+	HostName 192.0.2.10
+	User tester
+
+Host beta-db
+	# desc: Database for the smoke test
+	# tags: e2e, db
+	HostName 192.0.2.20
+	User tester
+
+Host gamma-cache
+	HostName 192.0.2.30

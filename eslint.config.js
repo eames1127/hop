@@ -48,4 +48,12 @@ export default tseslint.config(
 			"vue/multi-word-component-names": "off",
 		},
 	},
+	{
+		files: ["scripts/**/*.js"],
+		languageOptions: {
+			globals: {
+				...globals.node,
+			},
+		},
+	},
 );

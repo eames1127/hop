@@ -14,7 +14,8 @@
 		"format:css": "prettier --write \"src/**/*.css\"",
 		"format:check": "prettier --check \"src/**/*.css\"",
 		"typecheck": "vue-tsc --noEmit",
-		"test": "vitest run"
+		"test": "vitest run",
+		"test:e2e": "node scripts/e2e.js"
 	},
 	"dependencies": {
 		"@tauri-apps/api": "^2.12.4",
