@@ -88,12 +88,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Debug app build
         run: pnpm tauri build --debug --no-bundle
-      # The runner's WebView2 ignores WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS once the app passes its
-      # own arguments, but still honours the per-app policy key, so set that on this disposable VM.
-      - name: Enable WebView2 remote debugging for hop.exe
-        run: >-
-          reg add "HKCU\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments"
-          /v hop.exe /t REG_SZ /d "--remote-debugging-port=9333" /f
       - name: Smoke test over WebView2 remote debugging
         run: pnpm test:e2e
         timeout-minutes: 5

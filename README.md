@@ -129,7 +129,9 @@ pnpm tauri build --debug --no-bundle
 pnpm test:e2e
 ```
 
-`HOP_E2E_BINARY` and `HOP_E2E_PORT` override the app path and port. CI runs it on Windows.
+The script asks the app for the port through `HOP_E2E_DEBUG_PORT`, which only debug builds read;
+release builds have no way to open a debugging port. `HOP_E2E_BINARY` and `HOP_E2E_PORT`
+override the app path and port. CI runs it on Windows.
 
 Releases are built by GitHub Actions when a `v*` tag is pushed, as a draft release.
 

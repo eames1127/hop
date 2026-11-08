@@ -154,10 +154,6 @@ function describeProcesses() {
 	for (const [command, args] of [
 		["tasklist", ["/fi", "imagename eq hop.exe"]],
 		["tasklist", ["/fi", "imagename eq msedgewebview2.exe"]],
-		["powershell", ["-NoProfile", "-Command", "Get-CimInstance Win32_Process"
-			+ " -Filter \"Name='msedgewebview2.exe'\""
-			+ " | Select-Object -First 1 -ExpandProperty CommandLine"]],
-		["reg", ["query", "HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge", "/s"]],
 	]) {
 		const output = spawnSync(command, args, { encoding: "utf8" }).stdout ?? "";
 		console.error(`--- ${command} ${args.join(" ")}\n${output.trim()}`);
@@ -177,7 +173,7 @@ async function main() {
 		env: {
 			...process.env,
 			HOP_SSH_DIR: sshDir,
-			WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
+			HOP_E2E_DEBUG_PORT: String(port),
 		},
 	});
 	let stopping = false;
