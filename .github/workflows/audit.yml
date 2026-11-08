@@ -1,0 +1,34 @@
+name: Audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Weekly as well, because new advisories appear without any change to our code.
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      # Only shipped packages; dev tooling advisories do not reach users.
+      - name: pnpm audit (production)
+        run: pnpm audit --prod --audit-level high
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          toolchain: stable
+      # Fails on vulnerabilities; unmaintained-crate warnings are reported but do not fail.
+      - name: cargo audit
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
