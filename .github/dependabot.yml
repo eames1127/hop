@@ -1,0 +1,32 @@
+version: 2
+
+# Actions are pinned to commit SHAs, so without this they would never be updated.
+# Updates are grouped to keep the PR count manageable for a small project.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      cargo-minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      npm-minor:
+        update-types: [minor, patch]
+    ignore:
+      # typescript-eslint does not yet accept TypeScript 7 as a peer.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
