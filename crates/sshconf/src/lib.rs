@@ -18,8 +18,9 @@ pub use load::{load, ConfigSet, LoadedFile};
 pub use meta::{Forward, HostMeta};
 pub use name::is_valid_host_name;
 pub use notes_io::{
-	apply_import, export_notes, merge_meta, parse_notes, preview_import, to_json, ForwardEntry,
-	ImportPreview, ListMode, NoteEntry, NotesError, NotesFile, MAX_NOTES_FILE_BYTES, NOTES_VERSION,
+	apply_import, export_notes, export_selected, merge_meta, parse_notes, preview_import, to_json,
+	ExportSelection, ForwardEntry, ImportPreview, ListMode, NoteEntry, NotesError, NotesFile,
+	MAX_NOTES_FILE_BYTES, NOTES_VERSION,
 };
 pub use resolve::{parse_ssh_g, resolve, ResolveError, ResolvedHost};
 pub use save::{write_with_backup, BACKUPS_KEPT};

@@ -150,6 +150,38 @@ pub fn export_notes(set: &ConfigSet) -> NotesFile {
 	}
 }
 
+/// Which hosts an export covers, so a file shared with someone else holds only what it should.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum ExportSelection {
+	All,
+	Hosts {
+		names: Vec<String>,
+	},
+	/// Hosts with at least one of these tags.
+	Tags {
+		tags: Vec<String>,
+	},
+}
+
+impl ExportSelection {
+	fn includes(&self, alias: &str, entry: &NoteEntry) -> bool {
+		match self {
+			ExportSelection::All => true,
+			ExportSelection::Hosts { names } => names.iter().any(|name| name == alias),
+			ExportSelection::Tags { tags } => entry.tags.iter().any(|tag| tags.contains(tag)),
+		}
+	}
+}
+
+/// Like `export_notes`, but limited to the chosen hosts.
+pub fn export_selected(set: &ConfigSet, selection: &ExportSelection) -> NotesFile {
+	let mut file = export_notes(set);
+	file.hosts
+		.retain(|alias, entry| selection.includes(alias, entry));
+	file
+}
+
 pub fn to_json(file: &NotesFile) -> String {
 	// Serialising plain strings, numbers and maps cannot fail.
 	let mut text = serde_json::to_string_pretty(file).unwrap_or_default();
@@ -410,6 +442,41 @@ mod tests {
 		let json = to_json(&file);
 		assert!(json.contains("\"description\": \"Synology\""));
 		assert!(!json.contains("10.0.0.2"));
+	}
+
+	#[test]
+	fn exports_only_the_selected_hosts_or_tags() {
+		let config = "Host nas\n\t# tags: home, storage\n\nHost pi\n\t# tags: home\n\n\
+		              Host web\n\t# tags: work\n\nHost bare\n";
+		let set = set_of(&[config]);
+		let aliases = |selection: ExportSelection| {
+			export_selected(&set, &selection)
+				.hosts
+				.into_keys()
+				.collect::<Vec<_>>()
+		};
+
+		assert_eq!(aliases(ExportSelection::All), vec!["nas", "pi", "web"]);
+		let names = vec!["web".to_string(), "bare".to_string()];
+		assert_eq!(aliases(ExportSelection::Hosts { names }), vec!["web"]);
+		let tags = vec!["storage".to_string(), "work".to_string()];
+		assert_eq!(aliases(ExportSelection::Tags { tags }), vec!["nas", "web"]);
+		let none = ExportSelection::Tags { tags: Vec::new() };
+		assert!(aliases(none).is_empty());
+	}
+
+	#[test]
+	fn reads_export_selections_from_the_page() {
+		let json = r#"{"kind":"tags","tags":["home"]}"#;
+		let selection: ExportSelection = serde_json::from_str(json).unwrap();
+		assert_eq!(
+			selection,
+			ExportSelection::Tags {
+				tags: vec!["home".to_string()]
+			}
+		);
+		let extra = r#"{"kind":"hosts","names":[],"path":"/etc"}"#;
+		assert!(serde_json::from_str::<ExportSelection>(extra).is_err());
 	}
 
 	#[test]
