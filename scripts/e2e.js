@@ -145,6 +145,22 @@ function stop(app) {
 	}
 }
 
+// A failed run in CI leaves nothing to inspect, so print whether Hop and WebView2 were running
+// and what was listening before the processes are stopped.
+function describeProcesses() {
+	if (process.platform !== "win32") {
+		return;
+	}
+	for (const [command, args] of [
+		["tasklist", ["/fi", "imagename eq hop.exe"]],
+		["tasklist", ["/fi", "imagename eq msedgewebview2.exe"]],
+		["netstat", ["-ano", "-p", "tcp"]],
+	]) {
+		const output = spawnSync(command, args, { encoding: "utf8" }).stdout ?? "";
+		console.error(`--- ${command} ${args.join(" ")}\n${output.trim()}`);
+	}
+}
+
 async function main() {
 	if (!existsSync(binary)) {
 		throw new Error(`${binary} not found; run \`pnpm tauri build --debug --no-bundle\` first`);
@@ -163,17 +179,26 @@ async function main() {
 	});
 	let stopping = false;
 	app.on("exit", (code) => {
-		if (!stopping && code !== null && code !== 0) {
+		if (!stopping) {
 			console.error(`Hop exited early with code ${code}`);
 		}
 	});
 
 	let page;
 	try {
-		const target = await waitFor("the WebView2 debugging port", findPage);
+		const target = await waitFor("the WebView2 debugging port", () => {
+			if (app.exitCode !== null) {
+				throw new Error(`Hop is no longer running (exit code ${app.exitCode})`);
+			}
+			return findPage();
+		});
 		page = await connect(target.webSocketDebuggerUrl);
 		await run(page, sshDir);
 		console.log("All end-to-end checks passed.");
+	}
+	catch (error) {
+		describeProcesses();
+		throw error;
 	}
 	finally {
 		page?.close();
