@@ -1,6 +1,6 @@
 # Hop – Project Plan
 
-Nov 6, 2026 · @Daniel
+Nov 6, 2026 · the maintainer
 
 ## Summary and goals
 

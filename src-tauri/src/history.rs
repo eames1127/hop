@@ -105,6 +105,12 @@ impl History {
 		Ok(())
 	}
 
+	/// Deletes connections that started before `cutoff`, returning how many went.
+	pub fn prune(&self, cutoff: i64) -> rusqlite::Result<usize> {
+		self.conn
+			.execute("DELETE FROM connections WHERE started_at < ?1", [cutoff])
+	}
+
 	pub fn clear(&self) -> rusqlite::Result<()> {
 		self.conn.execute("DELETE FROM connections", [])?;
 		Ok(())
@@ -138,5 +144,17 @@ mod tests {
 		assert!(history.usage().unwrap().contains_key("store"));
 		history.clear().unwrap();
 		assert!(history.usage().unwrap().is_empty());
+	}
+
+	#[test]
+	fn prunes_only_older_connections() {
+		let history = History::in_memory().unwrap();
+		history.record("nas", 100).unwrap();
+		history.record("nas", 200).unwrap();
+		history.record("pi", 300).unwrap();
+
+		assert_eq!(history.prune(200).unwrap(), 1);
+		assert_eq!(history.entries(None, 0).unwrap().len(), 2);
+		assert_eq!(history.prune(200).unwrap(), 0);
 	}
 }

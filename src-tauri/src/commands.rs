@@ -12,8 +12,8 @@ use std::time::Duration;
 use chrono::{Local, Utc};
 use serde::{Deserialize, Serialize};
 use sshconf::{
-	is_valid_host_name, ConfigSet, Document, Forward, HostInput, ImportPreview, ListMode,
-	NotesFile, ResolvedHost, MAX_NOTES_FILE_BYTES,
+	is_valid_host_name, ConfigSet, Document, ExportSelection, Forward, HostInput, ImportPreview,
+	ListMode, NotesFile, ResolvedHost, MAX_NOTES_FILE_BYTES,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
@@ -64,10 +64,15 @@ impl AppState {
 			}
 		};
 
+		let history = History::open(&data_dir.join("history.sqlite3"))?;
+		if let Err(error) = prune_history(&history, &settings) {
+			eprintln!("hop: {error}");
+		}
+
 		Ok(AppState {
 			config_path: ssh_dir.join("config"),
 			ssh_dir,
-			history: Mutex::new(History::open(&data_dir.join("history.sqlite3"))?),
+			history: Mutex::new(history),
 			data_dir,
 			settings_path,
 			settings: Mutex::new(settings),
@@ -134,6 +139,19 @@ fn now() -> i64 {
 
 fn backup_stamp() -> String {
 	Local::now().format("%Y%m%d-%H%M%S").to_string()
+}
+
+/// Applies the retention setting, so old connections do not linger longer than the user chose.
+fn prune_history(history: &History, settings: &Settings) -> Result<(), String> {
+	let Some(cutoff) = settings.retention_cutoff(now())
+	else {
+		return Ok(());
+	};
+
+	history
+		.prune(cutoff)
+		.map(|_| ())
+		.map_err(|error| format!("Could not remove old history: {error}"))
 }
 
 fn check_name(name: &str) -> Result<(), String> {
@@ -246,10 +264,14 @@ pub fn connect_host(
 		.map_err(|error| format!("Could not open the terminal: {error}"))?;
 
 	let started_at = now();
-	state
-		.history()?
-		.record(name, started_at)
-		.map_err(|error| format!("Connected, but history could not be saved: {error}"))?;
+	{
+		let history = state.history()?;
+		history
+			.record(name, started_at)
+			.map_err(|error| format!("Connected, but history could not be saved: {error}"))?;
+		let settings = state.settings()?.clone();
+		prune_history(&history, &settings)?;
+	}
 	hosts_changed(app);
 	Ok(started_at)
 }
@@ -443,6 +465,8 @@ pub fn save_settings(
 	settings
 		.save(&state.settings_path)
 		.map_err(|error| format!("Could not save settings: {error}"))?;
+	// A shorter period should take effect now, not only after the next connection.
+	prune_history(&*state.history()?, &settings)?;
 	*state.settings()? = settings;
 	hosts_changed(&app);
 	get_settings(state)
@@ -577,6 +601,9 @@ pub fn start_auto_tunnels(app: &AppHandle) {
 
 const NOTES_FILTER_NAME: &str = "Hop notes";
 const NOTES_EXTENSIONS: &[&str] = &["json"];
+const MAX_EXPORT_CHOICES: usize = 10_000;
+/// Matches the notes file's own limit, so a tag that could be exported can also be chosen.
+const MAX_TAG_CHARS: usize = 64;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -596,10 +623,18 @@ fn pending_import(state: &AppState) -> Result<MutexGuard<'_, Option<NotesFile>>,
 /// Shows the save dialog and writes the notes. Returns how many hosts were exported, or none
 /// when the dialog was cancelled.
 #[tauri::command]
-pub async fn export_notes(app: AppHandle) -> Result<Option<usize>, String> {
+pub async fn export_notes(
+	app: AppHandle,
+	selection: ExportSelection,
+) -> Result<Option<usize>, String> {
+	check_selection(&selection)?;
 	tauri::async_runtime::spawn_blocking(move || {
 		let state = app.state::<AppState>();
-		let file = sshconf::export_notes(&state.load_config()?);
+		let file = sshconf::export_selected(&state.load_config()?, &selection);
+		if file.hosts.is_empty() {
+			return Err("None of the chosen hosts have notes to export".to_string());
+		}
+
 		// The file dialog runs here in Rust so the page never chooses a path to write.
 		let chosen = app
 			.dialog()
@@ -621,6 +656,42 @@ pub async fn export_notes(app: AppHandle) -> Result<Option<usize>, String> {
 	})
 	.await
 	.map_err(|error| format!("The export stopped unexpectedly: {error}"))?
+}
+
+/// Bounds what the page may send, since the selection arrives before any dialog is shown.
+fn check_selection(selection: &ExportSelection) -> Result<(), String> {
+	match selection {
+		ExportSelection::All => Ok(()),
+		ExportSelection::Hosts { names } => {
+			if names.is_empty() {
+				return Err("Choose at least one host to export".to_string());
+			}
+
+			if names.len() > MAX_EXPORT_CHOICES {
+				return Err("Too many hosts were chosen".to_string());
+			}
+
+			names.iter().try_for_each(|name| check_name(name))
+		}
+		ExportSelection::Tags { tags } => {
+			if tags.is_empty() {
+				return Err("Choose at least one tag to export".to_string());
+			}
+
+			if tags.len() > MAX_EXPORT_CHOICES {
+				return Err("Too many tags were chosen".to_string());
+			}
+
+			if tags
+				.iter()
+				.any(|tag| tag.is_empty() || tag.chars().count() > MAX_TAG_CHARS)
+			{
+				return Err("One of the chosen tags is not valid".to_string());
+			}
+
+			Ok(())
+		}
+	}
 }
 
 fn read_notes_file(path: &Path) -> Result<NotesFile, String> {
@@ -742,5 +813,35 @@ mod tests {
 		assert_eq!(forwards[0].0, "nas");
 		assert_eq!(forwards[0].1, 1);
 		assert_eq!(forwards[0].2.local_port, 8080);
+	}
+
+	#[test]
+	fn export_selections_are_checked() {
+		assert!(check_selection(&ExportSelection::All).is_ok());
+		let names = vec!["nas".to_string()];
+		assert!(check_selection(&ExportSelection::Hosts { names }).is_ok());
+		let names = vec!["nas; calc".to_string()];
+		assert!(check_selection(&ExportSelection::Hosts { names }).is_err());
+		let names = Vec::new();
+		assert!(check_selection(&ExportSelection::Hosts { names }).is_err());
+		let tags = vec!["x".repeat(65)];
+		assert!(check_selection(&ExportSelection::Tags { tags }).is_err());
+	}
+
+	#[test]
+	fn prunes_history_unless_kept_forever() {
+		let history = History::in_memory().unwrap();
+		history.record("nas", 0).unwrap();
+		history.record("nas", now()).unwrap();
+
+		let forever = Settings {
+			history_retention_days: 0,
+			..Settings::default()
+		};
+		prune_history(&history, &forever).unwrap();
+		assert_eq!(history.entries(None, 0).unwrap().len(), 2);
+
+		prune_history(&history, &Settings::default()).unwrap();
+		assert_eq!(history.entries(None, 0).unwrap().len(), 1);
 	}
 }

@@ -90,6 +90,9 @@ export interface Settings {
 	theme: Theme;
 	startWithComputer: boolean;
 	staleDays: number;
+	// 0 keeps history forever.
+	historyRetentionDays: number;
+	autoStatusChecks: boolean;
 }
 
 export interface TerminalChoice {
@@ -119,6 +122,11 @@ export interface TunnelView {
 
 // How an import treats tags and port forwards the host already has.
 export type ListMode = "overwrite" | "merge";
+
+export type ExportSelection =
+	| { kind: "all" }
+	| { kind: "hosts"; names: string[] }
+	| { kind: "tags"; tags: string[] };
 
 export interface NotesImportPreview {
 	fileName: string;

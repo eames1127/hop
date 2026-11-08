@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type {
+	ExportSelection,
 	HistoryEntry,
 	HostDetail,
 	HostInput,
@@ -77,8 +78,8 @@ export function onTunnelsChanged(handler: () => void): Promise<UnlistenFn> {
 
 // The file dialogs open on the Rust side, so the page never handles file paths.
 // Each resolves to null when the dialog is cancelled.
-export function exportNotes(): Promise<number | null> {
-	return invoke("export_notes");
+export function exportNotes(selection: ExportSelection): Promise<number | null> {
+	return invoke("export_notes", { selection });
 }
 
 export function previewNotesImport(): Promise<NotesImportPreview | null> {

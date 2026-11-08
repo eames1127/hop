@@ -17,7 +17,16 @@ pub struct Settings {
 	pub start_with_computer: bool,
 	/// A host unused for this many days is flagged as stale.
 	pub stale_days: u32,
+	/// Connections older than this many days are deleted; 0 keeps them forever.
+	pub history_retention_days: u32,
+	/// Off stops Hop contacting hosts until asked, for networks where unexpected connection
+	/// attempts are unwelcome.
+	pub auto_status_checks: bool,
 }
+
+/// A fixed list, so the window cannot choose an arbitrary period.
+pub const RETENTION_CHOICES: &[u32] = &[0, 30, 90, 365];
+const SECONDS_PER_DAY: i64 = 86_400;
 
 impl Default for Settings {
 	fn default() -> Settings {
@@ -26,6 +35,8 @@ impl Default for Settings {
 			theme: "system".to_string(),
 			start_with_computer: false,
 			stale_days: 90,
+			history_retention_days: 90,
+			auto_status_checks: true,
 		}
 	}
 }
@@ -44,7 +55,21 @@ impl Settings {
 			return Err("Stale after must be between 1 and 3650 days".to_string());
 		}
 
+		if !RETENTION_CHOICES.contains(&self.history_retention_days) {
+			return Err("Keep history must be forever, 30, 90 or 365 days".to_string());
+		}
+
 		Ok(())
+	}
+
+	/// The start time before which history is pruned, or none when it is kept forever.
+	pub fn retention_cutoff(&self, now: i64) -> Option<i64> {
+		if self.history_retention_days == 0 {
+			None
+		}
+		else {
+			Some(now - i64::from(self.history_retention_days) * SECONDS_PER_DAY)
+		}
 	}
 
 	/// A missing file gives the defaults; a damaged one is reported rather than overwritten.
@@ -90,5 +115,44 @@ mod tests {
 			..Settings::default()
 		};
 		assert!(bad.validate().is_err());
+
+		let odd_retention = Settings {
+			history_retention_days: 7,
+			..Settings::default()
+		};
+		assert!(odd_retention.validate().is_err());
+	}
+
+	#[test]
+	fn loads_files_written_before_the_privacy_settings() {
+		let dir = tempfile::tempdir().unwrap();
+		let path = dir.path().join("settings.json");
+		let old = r#"{"terminal":"auto","theme":"dark","startWithComputer":true,"staleDays":30}"#;
+		fs::write(&path, old).unwrap();
+
+		let settings = Settings::load(&path).unwrap();
+		assert_eq!(settings.theme, "dark");
+		assert_eq!(settings.stale_days, 30);
+		assert_eq!(settings.history_retention_days, 90);
+		assert!(settings.auto_status_checks);
+		assert!(settings.validate().is_ok());
+	}
+
+	#[test]
+	fn retention_cutoff_follows_the_setting() {
+		let forever = Settings {
+			history_retention_days: 0,
+			..Settings::default()
+		};
+		assert_eq!(forever.retention_cutoff(1_000_000), None);
+
+		let month = Settings {
+			history_retention_days: 30,
+			..Settings::default()
+		};
+		assert_eq!(
+			month.retention_cutoff(3_000_000),
+			Some(3_000_000 - 30 * 86_400)
+		);
 	}
 }

@@ -127,6 +127,30 @@ code {
 	letter-spacing: 0.04em;
 }
 
+.sidebar__heading-row {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	padding-right: 8px;
+}
+
+.sidebar__hint {
+	margin: 0;
+	padding: 0 8px 4px;
+	color: var(--muted);
+	font-size: 12px;
+}
+
+.link-button {
+	padding: 0;
+	border: none;
+	background: none;
+	color: var(--accent);
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+
 .nav-list {
 	margin: 0;
 	padding: 0;
@@ -149,6 +173,12 @@ code {
 
 .nav-item:hover {
 	background: var(--tag-bg);
+}
+
+.nav-item:focus-visible,
+.link-button:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
 }
 
 .nav-item--active {
@@ -237,6 +267,12 @@ code {
 
 .host-card:hover {
 	border-color: var(--accent);
+}
+
+/* A keyboard-only ring, offset so it reads differently from the selected outline. */
+.host-card:focus-visible {
+	outline: 3px solid var(--accent);
+	outline-offset: 3px;
 }
 
 .host-card--selected {
@@ -623,6 +659,16 @@ code {
 	padding: 10px 12px;
 	border: 1px solid var(--line);
 	border-radius: 10px;
+}
+
+/* Indented under its radio button; scrolls so a long host list keeps the dialog usable. */
+.notes-io__choices {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	max-height: 160px;
+	padding-left: 24px;
+	overflow-y: auto;
 }
 
 /* Auto-start choices under the port forwards in the host form */
