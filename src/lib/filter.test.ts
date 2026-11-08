@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { filterHosts, needsAttention, sortHosts, tagCounts } from "./filter";
+import { filterHosts, needsAttention, sortHosts, tagCounts, toggleTag } from "./filter";
 import type { Host } from "./types";
 
 function host(name: string, overrides: Partial<Host> = {}): Host {
@@ -41,15 +41,22 @@ const all = [pi, web, nas, wildcard];
 
 describe("filterHosts", () => {
 	it("matches every word against name, address and notes", () => {
-		const result = filterHosts(all, { query: "synology", tag: null, section: "all" });
+		const result = filterHosts(all, { query: "synology", tags: [], section: "all" });
 		expect(result.map((item) => item.name)).toEqual(["web", "nas"]);
-		const narrowed = filterHosts(all, { query: "nas home", tag: null, section: "all" });
+		const narrowed = filterHosts(all, { query: "nas home", tags: [], section: "all" });
 		expect(narrowed.map((item) => item.name)).toEqual(["nas"]);
 	});
 
 	it("filters by tag and section", () => {
-		expect(filterHosts(all, { query: "", tag: "work", section: "all" })).toEqual([web]);
-		expect(filterHosts(all, { query: "", tag: null, section: "favourites" })).toEqual([nas]);
+		expect(filterHosts(all, { query: "", tags: ["work"], section: "all" })).toEqual([web]);
+		expect(filterHosts(all, { query: "", tags: [], section: "favourites" })).toEqual([nas]);
+	});
+
+	it("requires every selected tag and still applies the search", () => {
+		const both = filterHosts(all, { query: "", tags: ["home", "storage"], section: "all" });
+		expect(both).toEqual([nas]);
+		expect(filterHosts(all, { query: "", tags: ["home", "work"], section: "all" })).toEqual([]);
+		expect(filterHosts(all, { query: "web", tags: ["home"], section: "all" })).toEqual([]);
 	});
 
 	it("lists stale, broken and offline hosts as needing attention", () => {
@@ -57,7 +64,7 @@ describe("filterHosts", () => {
 		const offline = new Set(["web"]);
 		const result = filterHosts([...all, broken], {
 			query: "",
-			tag: null,
+			tags: [],
 			section: "attention",
 		}, offline);
 		expect(result.map((item) => item.name)).toEqual(["pi", "web", "old"]);
@@ -74,5 +81,12 @@ describe("sortHosts", () => {
 describe("tagCounts", () => {
 	it("counts tags alphabetically", () => {
 		expect(tagCounts(all)).toEqual([["home", 1], ["storage", 1], ["work", 1]]);
+	});
+});
+
+describe("toggleTag", () => {
+	it("adds a tag once and removes it on the second click", () => {
+		expect(toggleTag([], "home")).toEqual(["home"]);
+		expect(toggleTag(["home", "work"], "home")).toEqual(["work"]);
 	});
 });

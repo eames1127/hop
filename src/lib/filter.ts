@@ -4,7 +4,8 @@ export type Section = "all" | "favourites" | "attention";
 
 export interface HostFilter {
 	query: string;
-	tag: string | null;
+	// Selected tags combine with AND: each click narrows the list, as search words do.
+	tags: readonly string[];
 	section: Section;
 }
 
@@ -52,7 +53,7 @@ export function filterHosts(
 			return false;
 		}
 
-		if (filter.tag !== null && !host.meta.tags.includes(filter.tag)) {
+		if (!filter.tags.every((tag) => host.meta.tags.includes(tag))) {
 			return false;
 		}
 
@@ -86,4 +87,13 @@ export function tagCounts(hosts: Host[]): Array<[string, number]> {
 	}
 
 	return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+// Clicking a tag adds it to the filter, clicking it again removes it.
+export function toggleTag(selected: readonly string[], tag: string): string[] {
+	if (selected.includes(tag)) {
+		return selected.filter((item) => item !== tag);
+	}
+
+	return [...selected, tag];
 }
