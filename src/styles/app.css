@@ -670,3 +670,20 @@ code {
 	padding-left: 24px;
 	overflow-y: auto;
 }
+
+/* Auto-start choices under the port forwards in the host form */
+
+.auto-start {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin: 0;
+	padding: 8px 10px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+}
+
+.auto-start legend {
+	padding: 0 4px;
+	font-size: 0.9em;
+}

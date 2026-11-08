@@ -2,12 +2,14 @@
 import { computed, reactive, ref } from "vue";
 
 import { errorMessage, saveHost } from "../api";
+import { forwardName } from "../tunnels";
 import type { Host, HostInput, HostList } from "../types";
 import {
 	formatForwards,
 	parseForwards,
 	parseTags,
 	validateForm,
+	withAutoStart,
 	type HostForm,
 } from "../validation";
 
@@ -33,6 +35,14 @@ const form = reactive<HostForm>({
 	forwards: formatForwards(props.host?.meta.forwards ?? []),
 });
 
+// Kept apart from the text box so editing a line does not lose its tick.
+const autoStartPorts = ref<number[]>(
+	(props.host?.meta.forwards ?? [])
+		.filter((forward) => forward.autoStart)
+		.map((forward) => forward.localPort),
+);
+const parsedForwards = computed(() => parseForwards(form.forwards) ?? []);
+
 const submitted = ref(false);
 const saving = ref(false);
 const saveError = ref<string | null>(null);
@@ -57,7 +67,7 @@ function toInput(): HostInput {
 			description: optional(form.description),
 			tags: parseTags(form.tags),
 			favourite: form.favourite,
-			forwards: parseForwards(form.forwards) ?? [],
+			forwards: withAutoStart(parsedForwards.value, autoStartPorts.value),
 			added: props.host?.meta.added ?? null,
 		},
 	};
@@ -197,6 +207,25 @@ async function submit(): Promise<void> {
 						class="error-text"
 					>{{ shownErrors.forwards }}</small>
 				</label>
+				<fieldset
+					v-if="parsedForwards.length > 0"
+					class="auto-start field--wide"
+				>
+					<legend>Open when Hop starts</legend>
+					<label
+						v-for="forward in parsedForwards"
+						:key="forward.localPort"
+						class="checkbox"
+					>
+						<input
+							v-model="autoStartPorts"
+							:value="forward.localPort"
+							type="checkbox"
+						>
+						<span>{{ forwardName(forward) }}
+							(localhost:{{ forward.localPort }})</span>
+					</label>
+				</fieldset>
 				<label class="checkbox field--wide">
 					<input
 						v-model="form.favourite"

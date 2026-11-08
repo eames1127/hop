@@ -66,6 +66,7 @@ export function parseForwards(text: string): Forward[] | null {
 			remoteHost: match[2],
 			remotePort,
 			label: (match[4] ?? "").trim(),
+			autoStart: false,
 		});
 	}
 
@@ -74,6 +75,15 @@ export function parseForwards(text: string): Forward[] | null {
 
 function isPort(value: number): boolean {
 	return Number.isInteger(value) && value >= 1 && value <= 65535;
+}
+
+// The text box has no room for the flag, so it is kept per local port and put back on save;
+// a local port can only be forwarded once, which makes it a stable key while the text changes.
+export function withAutoStart(forwards: Forward[], ports: number[]): Forward[] {
+	return forwards.map((forward) => ({
+		...forward,
+		autoStart: ports.includes(forward.localPort),
+	}));
 }
 
 export function formatForwards(forwards: Forward[]): string {

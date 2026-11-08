@@ -146,6 +146,7 @@ fn add_goes_before_trailing_wildcard() {
 				remote_host: "localhost".to_string(),
 				remote_port: 443,
 				label: "Web".to_string(),
+				auto_start: false,
 			}],
 			..HostMeta::default()
 		},
@@ -250,4 +251,36 @@ fn edits_refuse_injection() {
 	};
 	assert!(doc.add_host(&input).is_err());
 	assert_eq!(doc.to_text(), "");
+}
+
+#[test]
+fn auto_start_forwards_round_trip_and_old_ones_are_untouched() {
+	let text = "Host nas\n\
+		\t# forward: 5001:localhost:5001 Admin UI\n\
+		\t# forward: 8080:localhost:80 [auto] Web\n\
+		\tHostName nas.local\n";
+	let mut doc = Document::parse(text);
+	let nas = doc.find_host("nas").unwrap().clone();
+	let forwards = &nas.meta.forwards;
+	assert!(!forwards[0].auto_start);
+	assert!(forwards[1].auto_start);
+	assert_eq!(forwards[1].label, "Web");
+
+	doc.update_host("nas", &HostInput::from_block(&nas))
+		.unwrap();
+	assert_eq!(doc.to_text(), text);
+
+	let mut input = HostInput::from_block(&nas);
+	input.meta.forwards[0].auto_start = true;
+	input.meta.forwards[1].auto_start = false;
+	doc.update_host("nas", &input).unwrap();
+	let after = doc.to_text();
+	assert!(
+		after.contains("# forward: 5001:localhost:5001 [auto] Admin UI\n"),
+		"{after}"
+	);
+	assert!(
+		after.contains("# forward: 8080:localhost:80 Web\n"),
+		"{after}"
+	);
 }

@@ -5,6 +5,8 @@ export interface Forward {
 	remoteHost: string;
 	remotePort: number;
 	label: string;
+	// Opened as a background tunnel when Hop starts.
+	autoStart: boolean;
 }
 
 export interface HostMeta {
