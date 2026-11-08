@@ -8,6 +8,7 @@ import {
 	parseTags,
 	validateForm,
 	type HostForm,
+	withAutoStart,
 } from "./validation";
 
 const blank: HostForm = {
@@ -72,6 +73,13 @@ describe("tags and forwards", () => {
 		expect(forwards?.[0].label).toBe("Admin UI");
 		expect(formatForwards(forwards ?? [])).toBe(text);
 		expect(parseForwards("0:localhost:22")).toBeNull();
+	});
+
+	it("puts the auto-start flag back by local port", () => {
+		const forwards = parseForwards("5001:localhost:5001 Admin\n8080:web:80") ?? [];
+		expect(forwards.every((forward) => !forward.autoStart)).toBe(true);
+		const flagged = withAutoStart(forwards, [8080, 9999]);
+		expect(flagged.map((forward) => forward.autoStart)).toEqual([false, true]);
 	});
 });
 

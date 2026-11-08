@@ -13,7 +13,12 @@ pub struct HostMeta {
 	pub added: Option<String>,
 }
 
-/// A saved local port forward, written as `# forward: 5001:localhost:5001 Admin UI`.
+/// Written straight after the spec when a forward should open as Hop starts. A Hop that predates
+/// the flag reads it as the start of the label, so the forward still works there.
+const AUTO_START_MARKER: &str = "[auto]";
+
+/// A saved local port forward, written as `# forward: 5001:localhost:5001 Admin UI`, or
+/// `# forward: 5001:localhost:5001 [auto] Admin UI` when it opens as Hop starts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Forward {
@@ -21,6 +26,8 @@ pub struct Forward {
 	pub remote_host: String,
 	pub remote_port: u16,
 	pub label: String,
+	#[serde(default)]
+	pub auto_start: bool,
 }
 
 impl Forward {
@@ -38,11 +45,13 @@ impl Forward {
 			return None;
 		}
 
+		let (auto_start, label) = split_auto_start(label);
 		let forward = Forward {
 			local_port,
 			remote_host,
 			remote_port,
 			label: label.to_string(),
+			auto_start,
 		};
 		if forward.is_valid() {
 			Some(forward)
@@ -68,13 +77,26 @@ impl Forward {
 	}
 
 	fn to_comment_value(&self) -> String {
+		let mut value = self.spec();
+		if self.auto_start {
+			value.push(' ');
+			value.push_str(AUTO_START_MARKER);
+		}
 		let label = self.label.trim();
-		if label.is_empty() {
-			self.spec()
+		if !label.is_empty() {
+			value.push(' ');
+			value.push_str(label);
 		}
-		else {
-			format!("{} {}", self.spec(), label)
-		}
+		value
+	}
+}
+
+/// Only a whole `[auto]` word counts, so a label such as `[auto]matic` is left alone.
+fn split_auto_start(label: &str) -> (bool, &str) {
+	match label.strip_prefix(AUTO_START_MARKER) {
+		Some("") => (true, ""),
+		Some(rest) if rest.starts_with(char::is_whitespace) => (true, rest.trim()),
+		_ => (false, label),
 	}
 }
 
@@ -202,6 +224,34 @@ mod tests {
 		assert!(Forward::parse("5001:local;host:5001").is_none());
 		assert!(Forward::parse("5001:localhost").is_none());
 		assert!(Forward::parse("0:localhost:22").is_none());
+	}
+
+	#[test]
+	fn old_forwards_parse_without_auto_start() {
+		let forward = Forward::parse("5001:localhost:5001 Admin UI").unwrap();
+		assert!(!forward.auto_start);
+		assert_eq!(forward.to_comment_value(), "5001:localhost:5001 Admin UI");
+	}
+
+	#[test]
+	fn auto_start_round_trips() {
+		for text in [
+			"5001:localhost:5001 [auto] Admin UI",
+			"5001:localhost:5001 [auto]",
+		] {
+			let forward = Forward::parse(text).unwrap();
+			assert!(forward.auto_start, "{text}");
+			assert_eq!(forward.to_comment_value(), text);
+		}
+		let forward = Forward::parse("5001:localhost:5001 [auto]   Admin UI").unwrap();
+		assert_eq!(forward.label, "Admin UI");
+	}
+
+	#[test]
+	fn auto_start_needs_the_whole_marker() {
+		let forward = Forward::parse("5001:localhost:5001 [auto]matic").unwrap();
+		assert!(!forward.auto_start);
+		assert_eq!(forward.label, "[auto]matic");
 	}
 
 	#[test]

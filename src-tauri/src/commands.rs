@@ -12,8 +12,8 @@ use std::time::Duration;
 use chrono::{Local, Utc};
 use serde::{Deserialize, Serialize};
 use sshconf::{
-	is_valid_host_name, ConfigSet, Document, HostInput, ImportPreview, ListMode, NotesFile,
-	ResolvedHost, MAX_NOTES_FILE_BYTES,
+	is_valid_host_name, ConfigSet, Document, Forward, HostInput, ImportPreview, ListMode,
+	NotesFile, ResolvedHost, MAX_NOTES_FILE_BYTES,
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::ManagerExt;
@@ -508,8 +508,70 @@ pub fn stop_tunnel(
 }
 
 pub fn tunnels_changed(app: &AppHandle) {
+	tray::refresh(app);
 	if let Err(error) = app.emit(TUNNELS_CHANGED_EVENT, ()) {
 		eprintln!("hop: could not notify the window: {error}");
+	}
+}
+
+/// Every forward marked to open as Hop starts, with its host and position in the host's list.
+pub fn auto_start_forwards(set: &ConfigSet) -> Vec<(String, usize, Forward)> {
+	set.files
+		.iter()
+		.flat_map(|file| file.doc.blocks.iter())
+		.filter(|block| block.is_editable())
+		.flat_map(|block| {
+			let name = block.patterns[0].clone();
+			block
+				.meta
+				.forwards
+				.iter()
+				.enumerate()
+				.filter(|(_, forward)| forward.auto_start)
+				.map(move |(index, forward)| (name.clone(), index, forward.clone()))
+		})
+		.collect()
+}
+
+/// Opens the forwards marked to start with Hop. A failure is listed against its host and
+/// reported without opening the window, since Hop may have been started in the tray.
+pub fn start_auto_tunnels(app: &AppHandle) {
+	let state = app.state::<AppState>();
+	let set = match state.load_config() {
+		Ok(set) => set,
+		Err(error) => {
+			crate::notify_error(app, &format!("Could not open tunnels at start-up: {error}"));
+			return;
+		}
+	};
+
+	let forwards = auto_start_forwards(&set);
+	if forwards.is_empty() {
+		return;
+	}
+
+	let ssh = platform::ssh_program();
+	let mut failures = Vec::new();
+	for (name, index, forward) in &forwards {
+		let started = state
+			.tunnels
+			.start(name, *index, forward, |args| tunnels::spawn_ssh(&ssh, args));
+		if let Err(error) = started {
+			if let Err(error) = state
+				.tunnels
+				.record_failure(name, *index, forward, error.clone())
+			{
+				eprintln!("hop: could not record a tunnel failure: {error}");
+			}
+			failures.push(format!("{name} ({}): {error}", forward.local_port));
+		}
+	}
+
+	// Tunnels that start but die soon after are caught by the watcher, which lists them too.
+	tunnels_changed(app);
+	if !failures.is_empty() {
+		let message = format!("Some tunnels did not open: {}", failures.join("; "));
+		crate::notify_error(app, &message);
 	}
 }
 
@@ -660,5 +722,25 @@ mod tests {
 		assert!(require_configured(&set, "example.com").is_err());
 		assert!(require_configured(&set, "web1").is_err());
 		assert!(require_configured(&set, "nas; calc").is_err());
+	}
+
+	#[test]
+	fn only_forwards_marked_auto_start_are_opened() {
+		let text = "Host nas\n\t# forward: 5001:localhost:5001 Admin\n\
+			\t# forward: 8080:localhost:80 [auto] Web\n\n\
+			Host web1 web2\n\t# forward: 9090:localhost:90 [auto]\n";
+		let set = ConfigSet {
+			files: vec![LoadedFile {
+				path: PathBuf::from("config"),
+				doc: Document::parse(text),
+				included: false,
+			}],
+			warnings: Vec::new(),
+		};
+		let forwards = auto_start_forwards(&set);
+		assert_eq!(forwards.len(), 1);
+		assert_eq!(forwards[0].0, "nas");
+		assert_eq!(forwards[0].1, 1);
+		assert_eq!(forwards[0].2.local_port, 8080);
 	}
 }

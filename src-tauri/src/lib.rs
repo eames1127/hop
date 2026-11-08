@@ -60,6 +60,10 @@ pub fn run() {
 				show_main(app.handle(), args.iter().any(|arg| arg == QUICK_FLAG));
 			}
 
+			// Off the setup thread so a slow config read or ssh start cannot hold up the window.
+			let handle = app.handle().clone();
+			thread::spawn(move || commands::start_auto_tunnels(&handle));
+
 			Ok(())
 		})
 		.on_window_event(|window, event| {
@@ -144,6 +148,11 @@ pub(crate) fn show_main(app: &AppHandle, quick: bool) {
 /// Shows an error from the tray in the window, since the tray has nowhere to display it.
 pub(crate) fn show_error(app: &AppHandle, message: &str) {
 	show_main(app, false);
+	notify_error(app, message);
+}
+
+/// Passes an error to the window without bringing it forward.
+pub(crate) fn notify_error(app: &AppHandle, message: &str) {
 	if let Err(error) = app.emit(ERROR_EVENT, message) {
 		eprintln!("hop: could not show an error: {error}");
 	}

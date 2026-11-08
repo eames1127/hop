@@ -51,6 +51,13 @@ pub struct ForwardEntry {
 	pub remote_port: u16,
 	#[serde(default)]
 	pub label: String,
+	/// Left out when false, so files without auto-start still import into older versions.
+	#[serde(default, skip_serializing_if = "is_false")]
+	pub auto_start: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+	!*value
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,6 +119,7 @@ impl From<&Forward> for ForwardEntry {
 			remote_host: forward.remote_host.clone(),
 			remote_port: forward.remote_port,
 			label: forward.label.clone(),
+			auto_start: forward.auto_start,
 		}
 	}
 }
@@ -239,6 +247,7 @@ fn clean_entry(alias: &str, entry: NoteEntry) -> Result<NoteEntry, NotesError> {
 			remote_host: forward.remote_host,
 			remote_port: forward.remote_port,
 			label,
+			auto_start: forward.auto_start,
 		};
 		if !forward.is_valid() {
 			return Err(invalid("port forward"));
@@ -300,6 +309,7 @@ pub fn merge_meta(current: &HostMeta, incoming: &NoteEntry, mode: ListMode) -> H
 			remote_host: forward.remote_host.clone(),
 			remote_port: forward.remote_port,
 			label: forward.label.clone(),
+			auto_start: forward.auto_start,
 		})
 		.collect();
 

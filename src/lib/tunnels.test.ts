@@ -3,7 +3,13 @@ import { describe, expect, it } from "vitest";
 import { findTunnel, forwardName, tunnelAction, tunnelTitle } from "./tunnels";
 import type { Forward, TunnelView } from "./types";
 
-const forward: Forward = { localPort: 8080, remoteHost: "localhost", remotePort: 80, label: "" };
+const forward: Forward = {
+	localPort: 8080,
+	remoteHost: "localhost",
+	remotePort: 80,
+	label: "",
+	autoStart: false,
+};
 
 function tunnel(overrides: Partial<TunnelView> = {}): TunnelView {
 	return {

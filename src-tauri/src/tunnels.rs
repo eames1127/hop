@@ -267,6 +267,40 @@ impl Tunnels {
 		Ok(())
 	}
 
+	/// Lists a tunnel that could not be started as failed, so a problem found while nobody was
+	/// watching (at launch) is still shown on the host card and in the tray afterwards.
+	pub fn record_failure(
+		&self,
+		name: &str,
+		index: usize,
+		forward: &Forward,
+		error: String,
+	) -> Result<(), String> {
+		let mut entries = self.entries()?;
+		if entries
+			.iter()
+			.any(|entry| entry.view.local_port == forward.local_port)
+		{
+			// Whatever already holds the port is more useful to show than this failure.
+			return Ok(());
+		}
+
+		entries.push(Entry {
+			view: TunnelView {
+				host: name.to_string(),
+				forward: index,
+				local_port: forward.local_port,
+				remote_host: forward.remote_host.clone(),
+				remote_port: forward.remote_port,
+				label: forward.label.clone(),
+				state: TunnelState::Failed,
+				error: Some(error),
+			},
+			process: None,
+		});
+		Ok(())
+	}
+
 	/// Stops the tunnel on `local_port`, or forgets it if it had already failed.
 	pub fn stop(&self, local_port: u16) -> Result<(), String> {
 		let mut entries = self.entries()?;
@@ -376,6 +410,7 @@ mod tests {
 			remote_host: "localhost".to_string(),
 			remote_port: 5001,
 			label: "Admin UI".to_string(),
+			auto_start: false,
 		}
 	}
 
@@ -461,6 +496,28 @@ mod tests {
 		let retry = Handle::new();
 		tunnels
 			.start("nas", 0, &forward(8080), retry.spawner())
+			.unwrap();
+		let list = tunnels.list().unwrap();
+		assert_eq!(list.len(), 1);
+		assert_eq!(list[0].state, TunnelState::Running);
+	}
+
+	#[test]
+	fn recorded_failures_are_listed_but_never_hide_a_running_tunnel() {
+		let tunnels = Tunnels::default();
+		tunnels
+			.record_failure("nas", 0, &forward(8080), "Could not start ssh".to_string())
+			.unwrap();
+		let list = tunnels.list().unwrap();
+		assert_eq!(list[0].state, TunnelState::Failed);
+		assert_eq!(list[0].error.as_deref(), Some("Could not start ssh"));
+
+		let handle = Handle::new();
+		tunnels
+			.start("nas", 0, &forward(8080), handle.spawner())
+			.unwrap();
+		tunnels
+			.record_failure("web", 0, &forward(8080), "busy".to_string())
 			.unwrap();
 		let list = tunnels.list().unwrap();
 		assert_eq!(list.len(), 1);
