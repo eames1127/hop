@@ -3,7 +3,7 @@ import type { Section } from "../filter";
 
 defineProps<{
 	section: Section;
-	tag: string | null;
+	selectedTags: readonly string[];
 	tags: Array<[string, number]>;
 	totalCount: number;
 	favouriteCount: number;
@@ -12,13 +12,17 @@ defineProps<{
 
 const emit = defineEmits<{
 	section: [section: Section];
-	tag: [tag: string | null];
+	tag: [tag: string];
+	clearTags: [];
 	settings: [];
 }>();
 </script>
 
 <template>
-	<nav class="sidebar">
+	<nav
+		class="sidebar"
+		aria-label="Host filters"
+	>
 		<h1 class="sidebar__title">
 			Hop
 		</h1>
@@ -27,8 +31,8 @@ const emit = defineEmits<{
 			<li>
 				<button
 					class="nav-item"
-					:class="{ 'nav-item--active': section === 'all' && tag === null }"
-					@click="emit('section', 'all'); emit('tag', null)"
+					:class="{ 'nav-item--active': section === 'all' && selectedTags.length === 0 }"
+					@click="emit('section', 'all'); emit('clearTags')"
 				>
 					<span>All hosts</span>
 					<span class="count">{{ totalCount }}</span>
@@ -60,18 +64,41 @@ const emit = defineEmits<{
 		</ul>
 
 		<template v-if="tags.length > 0">
-			<h2 class="sidebar__heading">
-				Tags
-			</h2>
-			<ul class="nav-list">
+			<div class="sidebar__heading-row">
+				<h2
+					id="tag-heading"
+					class="sidebar__heading"
+				>
+					Tags
+				</h2>
+				<button
+					v-if="selectedTags.length > 0"
+					class="link-button"
+					@click="emit('clearTags')"
+				>
+					Clear
+				</button>
+			</div>
+			<p
+				v-if="selectedTags.length > 1"
+				class="sidebar__hint"
+			>
+				Showing hosts with all selected tags.
+			</p>
+			<ul
+				class="nav-list"
+				aria-labelledby="tag-heading"
+			>
 				<li
 					v-for="[name, count] in tags"
 					:key="name"
 				>
 					<button
 						class="nav-item"
-						:class="{ 'nav-item--active': tag === name }"
-						@click="emit('tag', tag === name ? null : name)"
+						:class="{ 'nav-item--active': selectedTags.includes(name) }"
+						:aria-pressed="selectedTags.includes(name)"
+						:aria-label="`${name}, ${count} ${count === 1 ? 'host' : 'hosts'}`"
+						@click="emit('tag', name)"
 					>
 						<span>{{ name }}</span>
 						<span class="count">{{ count }}</span>

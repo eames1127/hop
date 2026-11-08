@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 import {
 	checkStatus,
@@ -22,7 +22,21 @@ import HostCard from "../lib/components/HostCard.vue";
 import HostDetail from "../lib/components/HostDetail.vue";
 import SettingsPanel from "../lib/components/SettingsPanel.vue";
 import Sidebar from "../lib/components/Sidebar.vue";
-import { filterHosts, needsAttention, sortHosts, tagCounts, type Section } from "../lib/filter";
+import {
+	filterHosts,
+	needsAttention,
+	sortHosts,
+	tagCounts,
+	toggleTag,
+	type Section,
+} from "../lib/filter";
+import {
+	columnCount,
+	isGridKey,
+	isSearchShortcut,
+	isTypingTarget,
+	moveInGrid,
+} from "../lib/keyboard";
 import { applyTheme } from "../lib/theme";
 import { findTunnel, forwardName, tunnelAction } from "../lib/tunnels";
 import type { Host, HostList, HostStatus, Settings, TunnelView } from "../lib/types";
@@ -33,7 +47,9 @@ const statuses = ref<Map<string, HostStatus>>(new Map());
 const tunnels = ref<TunnelView[]>([]);
 const query = ref("");
 const section = ref<Section>("all");
-const tag = ref<string | null>(null);
+const selectedTags = ref<string[]>([]);
+const focusIndex = ref(0);
+const grid = ref<HTMLElement | null>(null);
 const selectedId = ref<string | null>(null);
 const editing = ref<Host | null | undefined>(undefined);
 const showSettings = ref(false);
@@ -58,7 +74,7 @@ const offline = computed(() => {
 
 const visibleHosts = computed(() => sortHosts(filterHosts(
 	hosts.value,
-	{ query: query.value, tag: tag.value, section: section.value },
+	{ query: query.value, tags: selectedTags.value, section: section.value },
 	offline.value,
 )));
 const selected = computed(() => hosts.value.find((host) => host.id === selectedId.value) ?? null);
@@ -224,6 +240,83 @@ function connectFirstMatch(): void {
 	}
 }
 
+function clearFilters(): void {
+	query.value = "";
+	selectedTags.value = [];
+}
+
+function cardElements(): HTMLElement[] {
+	return Array.from(grid.value?.querySelectorAll<HTMLElement>(".host-card") ?? []);
+}
+
+// Columns come from the live layout because the grid reflows with the window width.
+function gridColumns(): number {
+	if (!grid.value) {
+		return 1;
+	}
+
+	return columnCount(window.getComputedStyle(grid.value).gridTemplateColumns);
+}
+
+function focusCard(index: number): void {
+	const cards = cardElements();
+	const card = cards[index];
+	if (card) {
+		focusIndex.value = index;
+		card.focus();
+	}
+}
+
+function onGridKeydown(event: KeyboardEvent): void {
+	// Keys aimed at a button inside a card (favourite, tunnels) keep their usual meaning.
+	const target = event.target as HTMLElement | null;
+	const cards = cardElements();
+	const index = target ? cards.indexOf(target) : -1;
+	if (index < 0) {
+		return;
+	}
+
+	if (isGridKey(event.key)) {
+		event.preventDefault();
+		focusCard(moveInGrid(index, cards.length, gridColumns(), event.key));
+	}
+	else if (event.key === "Enter") {
+		event.preventDefault();
+		const host = visibleHosts.value[index];
+		if (host?.editable) {
+			void connectTo(host, null);
+		}
+	}
+	else if (event.key === " ") {
+		event.preventDefault();
+		const host = visibleHosts.value[index];
+		if (host) {
+			selectedId.value = host.id;
+		}
+	}
+}
+
+function onWindowKeydown(event: KeyboardEvent): void {
+	const typing = isTypingTarget(event.target as HTMLElement | null);
+	if (isSearchShortcut(event, typing)) {
+		event.preventDefault();
+		void focusSearch();
+		return;
+	}
+
+	// The form and settings dialogs close themselves on Esc, and text fields keep the key.
+	if (event.key !== "Escape" || typing || editing.value !== undefined || showSettings.value) {
+		return;
+	}
+
+	if (selectedId.value !== null) {
+		selectedId.value = null;
+	}
+	else {
+		clearFilters();
+	}
+}
+
 async function loadSettings(): Promise<void> {
 	try {
 		const { settings } = await getSettings();
@@ -235,7 +328,14 @@ async function loadSettings(): Promise<void> {
 	}
 }
 
+watch(visibleHosts, (list) => {
+	if (focusIndex.value >= list.length) {
+		focusIndex.value = Math.max(0, list.length - 1);
+	}
+});
+
 onMounted(async () => {
+	window.addEventListener("keydown", onWindowKeydown);
 	unlisteners.push(await onHostsChanged(() => void reload()));
 	unlisteners.push(await onQuickLaunch(() => void focusSearch()));
 	unlisteners.push(await onError((message) => showToast(message)));
@@ -248,6 +348,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+	window.removeEventListener("keydown", onWindowKeydown);
 	for (const unlisten of unlisteners) {
 		unlisten();
 	}
@@ -260,13 +361,14 @@ onUnmounted(() => {
 	<div class="layout">
 		<Sidebar
 			:section="section"
-			:tag="tag"
+			:selected-tags="selectedTags"
 			:tags="tags"
 			:total-count="hosts.length"
 			:favourite-count="favouriteCount"
 			:attention-count="attentionCount"
 			@section="section = $event"
-			@tag="tag = $event"
+			@tag="selectedTags = toggleTag(selectedTags, $event)"
+			@clear-tags="selectedTags = []"
 			@settings="showSettings = true"
 		/>
 
@@ -277,7 +379,7 @@ onUnmounted(() => {
 					v-model="query"
 					class="search"
 					type="search"
-					placeholder="Search hosts, addresses, tags… (Enter connects to the first)"
+					placeholder="Search hosts, addresses, tags… (/ to focus, Enter connects)"
 					aria-label="Search hosts"
 					spellcheck="false"
 					@keydown.enter="connectFirstMatch"
@@ -315,16 +417,22 @@ onUnmounted(() => {
 
 			<div
 				v-if="visibleHosts.length > 0"
+				ref="grid"
 				class="card-grid"
+				role="list"
+				aria-label="Hosts. Use the arrow keys to move, Enter to connect."
+				@keydown="onGridKeydown"
 			>
 				<HostCard
-					v-for="host in visibleHosts"
+					v-for="(host, index) in visibleHosts"
 					:key="host.id"
 					:host="host"
+					:tabindex="index === focusIndex ? 0 : -1"
 					:status="statuses.get(host.name)"
 					:selected="host.id === selectedId"
 					:tunnels="tunnels"
 					@select="selectedId = host.id"
+					@focus="focusIndex = index"
 					@connect="connectTo(host, $event)"
 					@tunnel="toggleTunnel(host, $event)"
 					@favourite="toggleFavourite(host, $event)"

@@ -52,6 +52,10 @@ const statusLabel = computed(() => {
 });
 
 const statusTitle = computed(() => props.status?.detail ?? statusLabel.value);
+const cardLabel = computed(() => {
+	const state = props.host.editable ? `, ${statusLabel.value.toLowerCase()}` : ", read-only";
+	return `${props.host.name}${state}`;
+});
 const sourceName = computed(() => props.host.source.split(/[\\/]/).pop() ?? props.host.source);
 </script>
 
@@ -59,6 +63,9 @@ const sourceName = computed(() => props.host.source.split(/[\\/]/).pop() ?? prop
 	<article
 		class="host-card"
 		:class="{ 'host-card--selected': selected, 'host-card--readonly': !host.editable }"
+		role="listitem"
+		:aria-label="cardLabel"
+		:aria-current="selected ? 'true' : undefined"
 		@click="emit('select')"
 	>
 		<header class="host-card__header">
