@@ -9,12 +9,12 @@ use serde::Serialize;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use windows::{launch_terminal, ssh_program, TERMINALS};
+pub use windows::{launch_terminal, ssh_keygen_program, ssh_program, TERMINALS};
 
 #[cfg(not(windows))]
 mod linux;
 #[cfg(not(windows))]
-pub use linux::{launch_terminal, ssh_program, TERMINALS};
+pub use linux::{launch_terminal, ssh_keygen_program, ssh_program, TERMINALS};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

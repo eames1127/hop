@@ -260,7 +260,7 @@ pub fn connect_host(
 	args.push(name.to_string());
 
 	let terminal = state.settings()?.terminal.clone();
-	platform::launch_terminal(&terminal, name, &args)
+	platform::launch_terminal(&terminal, name, &platform::ssh_program(), &args)
 		.map_err(|error| format!("Could not open the terminal: {error}"))?;
 
 	let started_at = now();
