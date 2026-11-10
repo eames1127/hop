@@ -133,3 +133,26 @@ export interface NotesImportPreview {
 	matched: string[];
 	unknown: string[];
 }
+
+export interface KeyInfo {
+	// As ssh-keygen names it, such as "ED25519" or "RSA".
+	kind: string;
+	bits: number;
+	fingerprint: string;
+	comment: string;
+	publicKey: string;
+}
+
+export interface KeyFile {
+	file: string;
+	info: KeyInfo | null;
+	error: string | null;
+}
+
+export type AuthoriseOutcome = "added" | "alreadyPresent" | "failed";
+
+export interface AuthoriseResult {
+	name: string;
+	outcome: AuthoriseOutcome;
+	detail: string | null;
+}

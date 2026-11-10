@@ -3,12 +3,15 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type {
+	AuthoriseResult,
 	ExportSelection,
 	HistoryEntry,
 	HostDetail,
 	HostInput,
 	HostList,
 	HostStatus,
+	KeyFile,
+	KeyInfo,
 	ListMode,
 	NotesImportPreview,
 	Settings,
@@ -92,6 +95,23 @@ export function applyNotesImport(mode: ListMode): Promise<HostList> {
 
 export function cancelNotesImport(): Promise<void> {
 	return invoke("cancel_notes_import");
+}
+
+export function listKeys(): Promise<KeyFile[]> {
+	return invoke("list_keys");
+}
+
+export function inspectPublicKey(publicKey: string): Promise<KeyInfo> {
+	return invoke("inspect_public_key", { publicKey });
+}
+
+// Opens ssh-keygen in a terminal; the key appears in listKeys once it has finished there.
+export function createKey(name: string): Promise<void> {
+	return invoke("create_key", { name });
+}
+
+export function authoriseKey(names: string[], publicKey: string): Promise<AuthoriseResult[]> {
+	return invoke("authorise_key", { names, publicKey });
 }
 
 export function onHostsChanged(handler: () => void): Promise<UnlistenFn> {

@@ -20,6 +20,7 @@ import {
 } from "../exportSelection";
 import { tagCounts } from "../filter";
 import type { Host, ListMode, NotesImportPreview, Settings, SettingsView } from "../types";
+import KeysSection from "./KeysSection.vue";
 
 const emit = defineEmits<{
 	close: [];
@@ -345,6 +346,8 @@ async function closeImport(): Promise<void> {
 						{{ notesMessage }}
 					</p>
 				</section>
+
+				<KeysSection :hosts="hosts" />
 
 				<section class="detail__section">
 					<h3>Files</h3>
