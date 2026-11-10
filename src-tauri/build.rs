@@ -19,6 +19,10 @@ const COMMANDS: &[&str] = &[
 	"preview_notes_import",
 	"apply_notes_import",
 	"cancel_notes_import",
+	"list_keys",
+	"inspect_public_key",
+	"create_key",
+	"authorise_key",
 ];
 
 fn main() {
