@@ -687,3 +687,100 @@ code {
 	padding: 0 4px;
 	font-size: 0.9em;
 }
+
+/* SSH keys in settings */
+
+.key-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.key-list__item {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 8px 10px;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+}
+
+.key-list__text {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.key-create {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.key-check {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 8px 10px;
+	border: 1px solid var(--accent);
+	border-radius: 8px;
+}
+
+.authorise-results {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	max-height: 200px;
+	margin: 0;
+	padding: 0;
+	overflow-y: auto;
+	list-style: none;
+}
+
+.authorise-results__item {
+	display: flex;
+	gap: 8px;
+}
+
+.authorise-results__item--added {
+	color: var(--good);
+}
+
+.authorise-results__item--alreadyPresent {
+	color: var(--muted);
+}
+
+.authorise-results__item--failed {
+	color: var(--bad);
+}
+
+/* Collapsed by default, so the guidance costs one line for anyone who does not need it. */
+.help summary {
+	color: var(--muted);
+	font-size: 12px;
+	cursor: pointer;
+}
+
+.help[open] summary {
+	margin-bottom: 6px;
+}
+
+.help ol,
+.help ul {
+	margin: 4px 0;
+	padding-left: 20px;
+}
+
+.help__code {
+	margin: 6px 0;
+	padding: 8px 10px;
+	border-radius: 8px;
+	background: var(--bg);
+	overflow-x: auto;
+	white-space: pre;
+}

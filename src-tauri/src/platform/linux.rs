@@ -1,6 +1,6 @@
 use std::env;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::reap;
@@ -16,6 +16,10 @@ pub fn ssh_program() -> PathBuf {
 	find_on_path("ssh").unwrap_or_else(|| PathBuf::from("ssh"))
 }
 
+pub fn ssh_keygen_program() -> PathBuf {
+	find_on_path("ssh-keygen").unwrap_or_else(|| PathBuf::from("ssh-keygen"))
+}
+
 fn find_on_path(program: &str) -> Option<PathBuf> {
 	let paths = env::var_os("PATH")?;
 	env::split_paths(&paths)
@@ -23,9 +27,14 @@ fn find_on_path(program: &str) -> Option<PathBuf> {
 		.find(|path| path.is_file())
 }
 
-/// Opens `ssh <args>` in a new terminal. `ssh_args` are built and checked by Hop, never taken
+/// Opens `<program> <args>` in a new terminal. `args` are built and checked by Hop, never taken
 /// from the page as raw text.
-pub fn launch_terminal(terminal: &str, title: &str, ssh_args: &[String]) -> io::Result<()> {
+pub fn launch_terminal(
+	terminal: &str,
+	title: &str,
+	program: &Path,
+	args: &[String],
+) -> io::Result<()> {
 	let terminal = match terminal {
 		"auto" => auto_terminal(),
 		other => other,
@@ -54,7 +63,7 @@ pub fn launch_terminal(terminal: &str, title: &str, ssh_args: &[String]) -> io::
 		}
 	};
 
-	let child = command.arg(ssh_program()).args(ssh_args).spawn()?;
+	let child = command.arg(program).args(args).spawn()?;
 	reap(child);
 	Ok(())
 }

@@ -22,6 +22,10 @@
 		"allow-export-notes",
 		"allow-preview-notes-import",
 		"allow-apply-notes-import",
-		"allow-cancel-notes-import"
+		"allow-cancel-notes-import",
+		"allow-list-keys",
+		"allow-inspect-public-key",
+		"allow-create-key",
+		"allow-authorise-key"
 	]
 }

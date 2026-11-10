@@ -3,6 +3,7 @@ mod commands;
 mod debug_port;
 mod history;
 mod hosts;
+mod keys;
 mod platform;
 mod settings;
 mod status;
@@ -100,6 +101,10 @@ pub fn run() {
 			commands::preview_notes_import,
 			commands::apply_notes_import,
 			commands::cancel_notes_import,
+			commands::list_keys,
+			commands::inspect_public_key,
+			commands::create_key,
+			commands::authorise_key,
 		])
 		.build(context)
 		.expect("error while building Hop")

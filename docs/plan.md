@@ -25,7 +25,7 @@ Version 1 is SSH only, for one person on two machines. Everything else waits unt
 | --- | --- |
 | Read and display hosts from `~/.ssh/config`, including `Include` files | Remote desktop, VNC, SFTP, web admin pages, databases |
 | Connect in Windows Terminal or Konsole | A built-in terminal inside the app |
-| Add, edit and delete hosts with a form, backup first | Managing or generating SSH keys |
+| Add, edit and delete hosts with a form, backup first | Reading, copying or moving private keys |
 | Descriptions, tags and favourites as config comments | Syncing hosts between machines (use git or dotfiles instead) |
 | Online checks and stale or broken flags | Running commands across many hosts |
 | Local connection history and counts | Cloud backup, accounts or any server |
@@ -100,9 +100,10 @@ Hop never loses or reshuffles anything in your SSH config: it edits only the lin
 
 Hop gets only the permissions it needs, granted by name and path, so even a compromised Hop could at worst damage the SSH config, and a backup exists to restore it.
 
-- **No key access.** Hop never opens private keys. It shows key file names from the config and checks a key file exists; `ssh` itself reads the keys when you connect.
+- **No key access.** Hop never opens private keys. It shows key file names from the config and checks a key file exists; `ssh` itself reads the keys when you connect. It reads only `.pub` files, and new keys are made by `ssh-keygen` in a terminal, so Hop never sees a passphrase.
+- **One key per computer.** To set up another computer, it makes its own key and this computer adds the public key to each host's `authorized_keys`. A lost computer is revoked by deleting its one line. The key travels to the host on ssh's stdin, never in a command line, and only after `ssh-keygen` has decoded it and the user has seen its fingerprint.
 - **File scope.** Read and write the SSH config, its `Include` files and Hop's backups; read and write Hop's own app data folder. Nothing else.
-- **Command scope.** The only programs Hop can start are `ssh` (for `-G` lookups) and the terminal (`wt.exe` or `konsole`). Arguments are fixed by Hop's Rust code, never built from text in the page.
+- **Command scope.** The only programs Hop can start are `ssh` (for `-G` lookups, tunnels and adding a public key), `ssh-keygen` (fingerprints, and new keys in a terminal) and the terminal (`wt.exe` or `konsole`). Arguments are fixed by Hop's Rust code, never built from text in the page.
 - **Host name check.** A host name must match `^[A-Za-z0-9._-]+$` before it reaches any command, so text like `nas; rm -rf ~` is refused.
 - **No network from the page.** A strict content security policy blocks the interface from loading or sending anything outside the app. Online checks are plain TCP connects made in Rust, only to hosts in your config.
 - **Untrusted text stays text.** Descriptions and notes are shown as plain text, never as HTML, so odd characters in a note can't run code.

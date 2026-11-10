@@ -17,6 +17,9 @@ click. It runs on Windows and Kubuntu (KDE Plasma), has no server, and keeps you
 - A details panel showing what OpenSSH really uses (`ssh -G`) and a 30-day connection chart.
 - Port forward shortcuts saved per host.
 - A tray menu with favourites and recent hosts, and a quick-launch shortcut.
+- SSH keys in settings: list your public keys with their fingerprints, make a new key with
+  `ssh-keygen`, and add another computer's public key to the `authorized_keys` of chosen hosts.
+  Each computer keeps its own key; Hop never reads or moves a private key.
 - Light and dark themes.
 
 ## How Hop stores its notes

@@ -21,6 +21,7 @@ use tauri_plugin_dialog::DialogExt;
 
 use crate::history::{History, HistoryEntry};
 use crate::hosts::{build_views, HostView};
+use crate::keys::{self, AuthoriseResult, KeyFile, KeyInfo, PublicKey};
 use crate::platform::{self, TerminalChoice};
 use crate::settings::Settings;
 use crate::status::{self, HostStatus};
@@ -260,7 +261,7 @@ pub fn connect_host(
 	args.push(name.to_string());
 
 	let terminal = state.settings()?.terminal.clone();
-	platform::launch_terminal(&terminal, name, &args)
+	platform::launch_terminal(&terminal, name, &platform::ssh_program(), &args)
 		.map_err(|error| format!("Could not open the terminal: {error}"))?;
 
 	let started_at = now();
@@ -769,6 +770,75 @@ pub fn apply_notes_import(
 pub fn cancel_notes_import(state: State<'_, AppState>) -> Result<(), String> {
 	*pending_import(&state)? = None;
 	Ok(())
+}
+
+#[tauri::command]
+pub async fn list_keys(state: State<'_, AppState>) -> Result<Vec<KeyFile>, String> {
+	let ssh_dir = state.ssh_dir.clone();
+	tauri::async_runtime::spawn_blocking(move || {
+		keys::list(&ssh_dir, &platform::ssh_keygen_program())
+	})
+	.await
+	.map_err(|error| format!("Listing keys stopped unexpectedly: {error}"))?
+}
+
+/// Shows a pasted key's fingerprint, so it can be compared with the other computer's before
+/// it is added anywhere.
+#[tauri::command]
+pub async fn inspect_public_key(public_key: String) -> Result<KeyInfo, String> {
+	let key = PublicKey::parse(&public_key)?;
+	tauri::async_runtime::spawn_blocking(move || {
+		keys::inspect(&platform::ssh_keygen_program(), &key)
+	})
+	.await
+	.map_err(|error| format!("Checking the key stopped unexpectedly: {error}"))?
+}
+
+/// Opens `ssh-keygen` in a terminal to make a new ed25519 key in the SSH folder.
+#[tauri::command]
+pub fn create_key(state: State<'_, AppState>, name: String) -> Result<(), String> {
+	let path = keys::new_key_path(&state.ssh_dir, &name)?;
+	keys::ensure_ssh_dir(&state.ssh_dir)
+		.map_err(|error| format!("Could not create {}: {error}", state.ssh_dir.display()))?;
+	let terminal = state.settings()?.terminal.clone();
+	platform::launch_terminal(
+		&terminal,
+		"New SSH key",
+		&platform::ssh_keygen_program(),
+		&keys::keygen_args(&path),
+	)
+	.map_err(|error| format!("Could not open the terminal: {error}"))
+}
+
+/// Adds a public key to `authorized_keys` on each chosen host, signing in with this computer's
+/// existing access.
+#[tauri::command]
+pub async fn authorise_key(
+	state: State<'_, AppState>,
+	names: Vec<String>,
+	public_key: String,
+) -> Result<Vec<AuthoriseResult>, String> {
+	if names.is_empty() {
+		return Err("Choose at least one host".to_string());
+	}
+
+	if names.len() > MAX_EXPORT_CHOICES {
+		return Err("Too many hosts were chosen".to_string());
+	}
+
+	let set = state.load_config()?;
+	for name in &names {
+		require_configured(&set, name)?;
+	}
+
+	let key = PublicKey::parse(&public_key)?;
+	tauri::async_runtime::spawn_blocking(move || {
+		// ssh-keygen decodes the key, so a damaged one never reaches a host.
+		keys::inspect(&platform::ssh_keygen_program(), &key)?;
+		Ok(keys::authorise_many(&platform::ssh_program(), &names, &key))
+	})
+	.await
+	.map_err(|error| format!("Authorising stopped unexpectedly: {error}"))?
 }
 
 #[cfg(test)]
