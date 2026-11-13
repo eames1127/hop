@@ -729,14 +729,7 @@ pub async fn preview_notes_import(app: AppHandle) -> Result<Option<NotesImportPr
 			.map_err(|error| format!("Could not use that file: {error}"))?;
 		let notes = read_notes_file(&path)?;
 		let mut preview = sshconf::preview_import(&state.load_config()?, &notes);
-		// Only the path travels between computers, so say when this one has no such key yet.
-		for host in &mut preview.new {
-			host.key_missing = host
-				.identity_file
-				.as_deref()
-				.is_some_and(|path| !hosts::missing_keys(&[path.to_string()]).is_empty());
-		}
-
+		hosts::flag_missing_keys(&mut preview);
 		*pending_import(&state)? = Some(notes);
 		let file_name = path
 			.file_name()

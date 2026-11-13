@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use chrono::NaiveDate;
 use serde::Serialize;
-use sshconf::{Block, BlockKind, ConfigSet, HostMeta};
+use sshconf::{Block, BlockKind, ConfigSet, HostMeta, ImportPreview};
 
 use crate::history::Usage;
 use crate::platform::expand_tilde;
@@ -86,13 +86,24 @@ fn owned(block: &Block, key: &str) -> Option<String> {
 }
 
 /// Hop only checks that key files exist; it never opens them.
-pub fn missing_keys(identity_files: &[String]) -> Vec<String> {
+fn missing_keys(identity_files: &[String]) -> Vec<String> {
 	identity_files
 		.iter()
 		.filter(|path| !path.contains('%') && !path.eq_ignore_ascii_case("none"))
 		.filter(|path| !expand_tilde(path).exists())
 		.cloned()
 		.collect()
+}
+
+/// Only key paths travel between computers, so marks each host an import would add whose key
+/// is not on this one yet.
+pub fn flag_missing_keys(preview: &mut ImportPreview) {
+	for host in &mut preview.new {
+		host.key_missing = host
+			.identity_file
+			.as_deref()
+			.is_some_and(|path| !missing_keys(&[path.to_string()]).is_empty());
+	}
 }
 
 pub fn is_stale(last_used: Option<i64>, added: Option<&str>, now: i64, stale_days: u32) -> bool {
@@ -117,6 +128,36 @@ mod tests {
 	use sshconf::{Document, LoadedFile};
 
 	use super::*;
+
+	#[test]
+	fn flags_imported_hosts_whose_key_is_not_here() {
+		let dir = tempfile::tempdir().unwrap();
+		let present = dir.path().join("id_here");
+		std::fs::write(&present, "not really a key").unwrap();
+		let host = |name: &str, key: Option<&str>| sshconf::NewHost {
+			name: name.to_string(),
+			identity_file: key.map(str::to_string),
+			..sshconf::NewHost::default()
+		};
+		let mut preview = ImportPreview {
+			new: vec![
+				host("here", present.to_str()),
+				host("gone", Some("~/.ssh/hop-test-missing-key")),
+				host("token", Some("~/.ssh/%h")),
+				host("none", None),
+			],
+			..ImportPreview::default()
+		};
+
+		flag_missing_keys(&mut preview);
+		let flagged: Vec<_> = preview
+			.new
+			.iter()
+			.filter(|host| host.key_missing)
+			.map(|host| host.name.as_str())
+			.collect();
+		assert_eq!(flagged, vec!["gone"]);
+	}
 
 	#[test]
 	fn stale_rules() {
