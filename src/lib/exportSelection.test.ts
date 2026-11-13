@@ -36,12 +36,23 @@ const nas = host("nas", { tags: ["home", "storage"] });
 const pi = host("pi", { tags: ["home"] });
 const web = host("web", { description: "Work site" });
 const bare = host("bare");
+const addressOnly = { ...host("box"), hostName: "box.example" };
 const wildcard = host("*", { tags: ["home"] }, false);
 const all = [nas, pi, web, bare, wildcard];
 
 describe("exportableHosts", () => {
 	it("leaves out hosts without notes and read-only blocks", () => {
 		expect(exportableHosts(all).map((item) => item.name)).toEqual(["nas", "pi", "web"]);
+	});
+});
+
+describe("exportableHosts with connection details", () => {
+	it("adds hosts that only have an address", () => {
+		expect(exportableHosts([...all, addressOnly], true).map((item) => item.name))
+			.toEqual(["nas", "pi", "web", "box"]);
+		expect(exportableHosts([...all, addressOnly]).map((item) => item.name))
+			.toEqual(["nas", "pi", "web"]);
+		expect(selectionCount([...all, addressOnly], { kind: "all" }, true)).toBe(4);
 	});
 });
 

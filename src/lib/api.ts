@@ -81,16 +81,19 @@ export function onTunnelsChanged(handler: () => void): Promise<UnlistenFn> {
 
 // The file dialogs open on the Rust side, so the page never handles file paths.
 // Each resolves to null when the dialog is cancelled.
-export function exportNotes(selection: ExportSelection): Promise<number | null> {
-	return invoke("export_notes", { selection });
+export function exportNotes(
+	selection: ExportSelection,
+	includeConnection: boolean,
+): Promise<number | null> {
+	return invoke("export_notes", { selection, includeConnection });
 }
 
 export function previewNotesImport(): Promise<NotesImportPreview | null> {
 	return invoke("preview_notes_import");
 }
 
-export function applyNotesImport(mode: ListMode): Promise<HostList> {
-	return invoke("apply_notes_import", { mode });
+export function applyNotesImport(mode: ListMode, addNew: boolean): Promise<HostList> {
+	return invoke("apply_notes_import", { mode, addNew });
 }
 
 export function cancelNotesImport(): Promise<void> {

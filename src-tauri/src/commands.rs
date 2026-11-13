@@ -20,7 +20,7 @@ use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_dialog::DialogExt;
 
 use crate::history::{History, HistoryEntry};
-use crate::hosts::{build_views, HostView};
+use crate::hosts::{self, build_views, HostView};
 use crate::keys::{self, AuthoriseResult, KeyFile, KeyInfo, PublicKey};
 use crate::platform::{self, TerminalChoice};
 use crate::settings::Settings;
@@ -627,13 +627,14 @@ fn pending_import(state: &AppState) -> Result<MutexGuard<'_, Option<NotesFile>>,
 pub async fn export_notes(
 	app: AppHandle,
 	selection: ExportSelection,
+	include_connection: bool,
 ) -> Result<Option<usize>, String> {
 	check_selection(&selection)?;
 	tauri::async_runtime::spawn_blocking(move || {
 		let state = app.state::<AppState>();
-		let file = sshconf::export_selected(&state.load_config()?, &selection);
+		let file = sshconf::export_selected(&state.load_config()?, &selection, include_connection);
 		if file.hosts.is_empty() {
-			return Err("None of the chosen hosts have notes to export".to_string());
+			return Err("None of the chosen hosts have anything to export".to_string());
 		}
 
 		// The file dialog runs here in Rust so the page never chooses a path to write.
@@ -727,7 +728,8 @@ pub async fn preview_notes_import(app: AppHandle) -> Result<Option<NotesImportPr
 			.into_path()
 			.map_err(|error| format!("Could not use that file: {error}"))?;
 		let notes = read_notes_file(&path)?;
-		let preview = sshconf::preview_import(&state.load_config()?, &notes);
+		let mut preview = sshconf::preview_import(&state.load_config()?, &notes);
+		hosts::flag_missing_keys(&mut preview);
 		*pending_import(&state)? = Some(notes);
 		let file_name = path
 			.file_name()
@@ -740,11 +742,13 @@ pub async fn preview_notes_import(app: AppHandle) -> Result<Option<NotesImportPr
 }
 
 /// Applies the previewed file. Each config file it touches is saved once, with one backup.
+/// With `add_new`, hosts that are not in the config yet are added to the main file.
 #[tauri::command]
 pub fn apply_notes_import(
 	app: AppHandle,
 	state: State<'_, AppState>,
 	mode: ListMode,
+	add_new: bool,
 ) -> Result<HostList, String> {
 	let notes = pending_import(&state)?
 		.take()
@@ -755,8 +759,9 @@ pub fn apply_notes_import(
 			.lock()
 			.map_err(|_| "Saving is unavailable after an earlier error".to_string())?;
 		let set = state.load_config()?;
-		let changed =
-			sshconf::apply_import(&set, &notes, mode).map_err(|error| error.to_string())?;
+		let today = Local::now().format("%Y-%m-%d").to_string();
+		let changed = sshconf::apply_import(&set, &notes, mode, add_new, &today)
+			.map_err(|error| error.to_string())?;
 		for (index, doc) in &changed {
 			write_doc(&set.files[*index].path, doc)?;
 		}

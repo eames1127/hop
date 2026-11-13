@@ -35,19 +35,28 @@ const busy = ref(false);
 const notesMessage = ref<string | null>(null);
 const importPreview = ref<NotesImportPreview | null>(null);
 const listMode = ref<ListMode>("merge");
+const addNew = ref(true);
+const includeConnection = ref(true);
 const hosts = ref<Host[]>([]);
 const exportMode = ref<ExportMode>("all");
 const exportNames = ref<string[]>([]);
 const exportTags = ref<string[]>([]);
 
-const exportChoices = computed(() => exportableHosts(hosts.value));
+const exportChoices = computed(() => exportableHosts(hosts.value, includeConnection.value));
 const exportTagChoices = computed(() => tagCounts(exportChoices.value).map(([tag]) => tag));
 const selection = computed(() => buildSelection(
 	exportMode.value,
 	exportNames.value,
 	exportTags.value,
 ));
-const exportCount = computed(() => selectionCount(hosts.value, selection.value));
+const exportCount = computed(() => selectionCount(
+	hosts.value,
+	selection.value,
+	includeConnection.value,
+));
+const importAdds = computed(() => (addNew.value ? importPreview.value?.new.length ?? 0 : 0));
+const missingKeyCount = computed(() => importPreview.value?.new
+	.filter((host) => host.keyMissing).length ?? 0);
 
 onMounted(async () => {
 	try {
@@ -117,15 +126,16 @@ async function runNotes(action: () => Promise<void>): Promise<void> {
 
 function exportChosen(): Promise<void> {
 	return runNotes(async () => {
-		const count = await exportNotes(selection.value);
+		const count = await exportNotes(selection.value, includeConnection.value);
 		if (count !== null) {
-			notesMessage.value = `Exported notes for ${plural(count, "host")}.`;
+			notesMessage.value = `Exported ${plural(count, "host")}.`;
 		}
 	});
 }
 
 function chooseImport(): Promise<void> {
 	return runNotes(async () => {
+		addNew.value = true;
 		importPreview.value = await previewNotesImport();
 	});
 }
@@ -136,10 +146,16 @@ function confirmImport(): Promise<void> {
 		return Promise.resolve();
 	}
 
+	const added = importAdds.value;
 	return runNotes(async () => {
-		await applyNotesImport(listMode.value);
+		hosts.value = (await applyNotesImport(listMode.value, addNew.value)).hosts;
 		importPreview.value = null;
-		notesMessage.value = `Imported notes for ${plural(preview.matched.length, "host")}.`;
+		const parts = [`updated ${plural(preview.matched.length, "host")}`];
+		if (added > 0) {
+			parts.push(`added ${plural(added, "new host")}`);
+		}
+
+		notesMessage.value = `Import done: ${parts.join(" and ")}.`;
 	});
 }
 
@@ -253,9 +269,22 @@ async function closeImport(): Promise<void> {
 				<section class="detail__section">
 					<h3>Notes</h3>
 					<p class="muted small">
-						Copy descriptions, tags, favourites and port forwards to another computer.
-						Addresses, users and key files are not included, but host aliases are, and
-						they may still reveal host names.
+						Copy hosts with their descriptions, tags, favourites and port forwards to
+						another computer. Key file paths can be included, but keys themselves never
+						are: each computer keeps its own.
+					</p>
+					<label class="checkbox">
+						<input
+							v-model="includeConnection"
+							type="checkbox"
+						>
+						<span>Include addresses, users, ports, jump hosts and key file paths</span>
+					</label>
+					<p
+						v-if="!includeConnection"
+						class="muted small"
+					>
+						Host aliases are still included, and may reveal host names.
 					</p>
 					<fieldset class="notes-io__mode">
 						<legend>Export</legend>
@@ -265,7 +294,7 @@ async function closeImport(): Promise<void> {
 								type="radio"
 								value="all"
 							>
-							<span>All hosts with notes</span>
+							<span>All hosts</span>
 						</label>
 						<label class="checkbox">
 							<input
@@ -398,7 +427,7 @@ async function closeImport(): Promise<void> {
 				</h2>
 				<p class="muted small">
 					From <code>{{ importPreview.fileName }}</code>. Hop keeps a backup of each
-					config file it changes, and never adds hosts from an import.
+					config file it changes.
 				</p>
 
 				<template v-if="importPreview.matched.length > 0">
@@ -432,25 +461,61 @@ async function closeImport(): Promise<void> {
 						</label>
 					</fieldset>
 				</template>
-				<p v-else>
-					None of the hosts in this file are in your SSH config.
-				</p>
 
-				<template v-if="importPreview.unknown.length > 0">
-					<h3>Skipping {{ plural(importPreview.unknown.length, "unknown host") }}</h3>
+				<template v-if="importPreview.new.length > 0">
+					<h3>{{ plural(importPreview.new.length, "host") }} not in your SSH config</h3>
+					<label class="checkbox">
+						<input
+							v-model="addNew"
+							type="checkbox"
+						>
+						<span>Add them to your SSH config</span>
+					</label>
+					<ul class="notes-io__list">
+						<li
+							v-for="host in importPreview.new"
+							:key="host.name"
+						>
+							{{ host.name }}
+							<span
+								v-if="host.hostName === null"
+								class="muted small"
+							> (no address, edit it after importing)</span>
+							<span
+								v-if="host.keyMissing"
+								class="error-text small"
+							> (key <code>{{ host.identityFile }}</code> not on this computer)</span>
+						</li>
+					</ul>
+					<p
+						v-if="missingKeyCount > 0"
+						class="muted small"
+					>
+						Keys are not copied between computers. Create a key for this computer under
+						SSH keys in settings, then add it to those servers from a computer that can
+						already sign in.
+					</p>
+				</template>
+
+				<template v-if="importPreview.conflicting.length > 0">
+					<h3>Skipping {{ plural(importPreview.conflicting.length, "host") }}</h3>
 					<p class="muted small">
-						These are not editable hosts in your SSH config. Add them first, then import
-						again.
+						These names are already used by blocks Hop does not edit, such as a
+						<code>Host</code> line with several names.
 					</p>
 					<ul class="notes-io__list">
 						<li
-							v-for="alias in importPreview.unknown"
+							v-for="alias in importPreview.conflicting"
 							:key="alias"
 						>
 							{{ alias }}
 						</li>
 					</ul>
 				</template>
+
+				<p v-if="importPreview.matched.length === 0 && importPreview.new.length === 0">
+					None of the hosts in this file can be imported.
+				</p>
 
 				<div class="dialog__actions">
 					<button
@@ -463,7 +528,7 @@ async function closeImport(): Promise<void> {
 					<button
 						type="button"
 						class="button button--primary"
-						:disabled="busy || importPreview.matched.length === 0"
+						:disabled="busy || (importPreview.matched.length === 0 && importAdds === 0)"
 						@click="confirmImport"
 					>
 						Import
