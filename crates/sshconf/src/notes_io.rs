@@ -1,7 +1,9 @@
 //! Export and import of Hop's notes, so they can be carried to another machine.
 //!
-//! The file holds notes only, keyed by alias. Addresses, users and keys stay out of it, and an
-//! import only ever updates hosts that already exist; it never adds a `Host` block.
+//! The file holds notes keyed by alias and, from version 2, each host's connection details
+//! (address, user, port, key file path and jump host). Key file paths are only paths: a key never
+//! leaves the computer it was made on. An import updates the notes of hosts that already exist
+//! and can add a `Host` block for each one that does not.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -14,7 +16,10 @@ use crate::load::ConfigSet;
 use crate::meta::{single_line, Forward, HostMeta};
 use crate::name::is_valid_host_name;
 
-pub const NOTES_VERSION: u32 = 1;
+/// The version written when the file holds connection details.
+pub const NOTES_VERSION: u32 = 2;
+/// Notes only. Still written when connection details are left out, so older Hops can read it.
+const NOTES_ONLY_VERSION: u32 = 1;
 /// Larger files are refused before parsing; a real notes file is a few kilobytes.
 pub const MAX_NOTES_FILE_BYTES: u64 = 1024 * 1024;
 
@@ -25,6 +30,8 @@ const MAX_TAG_CHARS: usize = 64;
 const MAX_FORWARDS: usize = 32;
 const MAX_LABEL_CHARS: usize = 100;
 const MAX_ADDED_CHARS: usize = 32;
+const MAX_CONNECTION_VALUE_CHARS: usize = 255;
+const MAX_IDENTITY_FILE_CHARS: usize = 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -41,6 +48,57 @@ pub struct NoteEntry {
 	pub favourite: bool,
 	pub forwards: Vec<ForwardEntry>,
 	pub added: Option<String>,
+	/// Left out of notes-only files, so they stay readable by version 1 Hops.
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub connection: Option<ConnectionEntry>,
+}
+
+/// How to reach a host, used only when an import adds it. Existing hosts keep their own.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields, default)]
+pub struct ConnectionEntry {
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub host_name: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub user: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub port: Option<u16>,
+	/// The key's path as the config writes it, such as `~/.ssh/id_ed25519`. Never the key.
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub identity_file: Option<String>,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	pub proxy_jump: Option<String>,
+}
+
+impl ConnectionEntry {
+	fn from_input(input: &HostInput) -> Option<ConnectionEntry> {
+		let text = |value: Option<&str>| {
+			value
+				.map(str::trim)
+				.filter(|value| !value.is_empty())
+				.map(str::to_string)
+		};
+		let entry = ConnectionEntry {
+			host_name: text(Some(&input.host_name)),
+			user: text(input.user.as_deref()),
+			port: input.port,
+			identity_file: text(input.identity_file.as_deref()),
+			proxy_jump: text(input.proxy_jump.as_deref()),
+		};
+		(entry != ConnectionEntry::default()).then_some(entry)
+	}
+
+	fn to_input(&self, name: &str, meta: HostMeta) -> HostInput {
+		HostInput {
+			name: name.to_string(),
+			host_name: self.host_name.clone().unwrap_or_default(),
+			user: self.user.clone(),
+			port: self.port,
+			identity_file: self.identity_file.clone(),
+			proxy_jump: self.proxy_jump.clone(),
+			meta,
+		}
+	}
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,12 +162,26 @@ pub enum ListMode {
 	Merge,
 }
 
-/// Which aliases in a file would be updated, and which are skipped because they are not here.
+/// What an import would do with each alias in the file.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportPreview {
+	/// Editable hosts here whose notes would be updated.
 	pub matched: Vec<String>,
-	pub unknown: Vec<String>,
+	/// Hosts not in the config at all, which the import can add.
+	pub new: Vec<NewHost>,
+	/// Named by a block Hop does not edit, such as `Host web1 web2`, so they are skipped.
+	pub conflicting: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewHost {
+	pub name: String,
+	pub host_name: Option<String>,
+	pub identity_file: Option<String>,
+	/// Set by the app, which can look at this computer's files: the key file is not here yet.
+	pub key_missing: bool,
 }
 
 impl From<&Forward> for ForwardEntry {
@@ -132,28 +204,43 @@ impl From<&HostMeta> for NoteEntry {
 			favourite: meta.favourite,
 			forwards: meta.forwards.iter().map(ForwardEntry::from).collect(),
 			added: meta.added.clone(),
+			connection: None,
 		}
 	}
 }
 
-/// Collects the notes of every editable host. Hosts without notes are left out, so importing
-/// the file elsewhere cannot clear notes that machine already has.
-pub fn export_notes(set: &ConfigSet) -> NotesFile {
+/// Collects the notes of every editable host, and their connection details when asked. Hosts
+/// with nothing to export are left out, so importing the file elsewhere cannot clear notes that
+/// machine already has.
+pub fn export_notes(set: &ConfigSet, include_connection: bool) -> NotesFile {
 	let mut hosts = BTreeMap::new();
 	for file in &set.files {
 		for block in file.doc.blocks.iter().filter(|block| block.is_editable()) {
 			let alias = &block.patterns[0];
 			// The first block for an alias is the one Hop shows and edits.
-			if hosts.contains_key(alias) || block.meta == HostMeta::default() {
+			if hosts.contains_key(alias) {
 				continue;
 			}
 
-			hosts.insert(alias.clone(), NoteEntry::from(&block.meta));
+			let mut entry = NoteEntry::from(&block.meta);
+			if include_connection {
+				entry.connection = ConnectionEntry::from_input(&HostInput::from_block(block));
+			}
+
+			if entry != NoteEntry::default() {
+				hosts.insert(alias.clone(), entry);
+			}
 		}
 	}
 
+	let has_connection = hosts.values().any(|entry| entry.connection.is_some());
 	NotesFile {
-		version: NOTES_VERSION,
+		version: if has_connection {
+			NOTES_VERSION
+		}
+		else {
+			NOTES_ONLY_VERSION
+		},
 		hosts,
 	}
 }
@@ -183,10 +270,18 @@ impl ExportSelection {
 }
 
 /// Like `export_notes`, but limited to the chosen hosts.
-pub fn export_selected(set: &ConfigSet, selection: &ExportSelection) -> NotesFile {
-	let mut file = export_notes(set);
+pub fn export_selected(
+	set: &ConfigSet,
+	selection: &ExportSelection,
+	include_connection: bool,
+) -> NotesFile {
+	let mut file = export_notes(set, include_connection);
 	file.hosts
 		.retain(|alias, entry| selection.includes(alias, entry));
+	if file.hosts.values().all(|entry| entry.connection.is_none()) {
+		file.version = NOTES_ONLY_VERSION;
+	}
+
 	file
 }
 
@@ -210,7 +305,7 @@ pub fn parse_notes(text: &str) -> Result<NotesFile, NotesError> {
 		.get("version")
 		.and_then(serde_json::Value::as_u64)
 		.ok_or_else(|| NotesError::Malformed("missing version".to_string()))?;
-	if version != u64::from(NOTES_VERSION) {
+	if version != u64::from(NOTES_VERSION) && version != u64::from(NOTES_ONLY_VERSION) {
 		return Err(NotesError::UnsupportedVersion(version));
 	}
 
@@ -231,7 +326,7 @@ pub fn parse_notes(text: &str) -> Result<NotesFile, NotesError> {
 	}
 
 	Ok(NotesFile {
-		version: NOTES_VERSION,
+		version: file.version,
 		hosts,
 	})
 }
@@ -288,13 +383,68 @@ fn clean_entry(alias: &str, entry: NoteEntry) -> Result<NoteEntry, NotesError> {
 		forwards.push(ForwardEntry::from(&forward));
 	}
 
+	let connection = match entry.connection {
+		Some(connection) => clean_connection(alias, connection)?,
+		None => None,
+	};
+
 	Ok(NoteEntry {
 		description,
 		tags,
 		favourite: entry.favourite,
 		forwards,
 		added,
+		connection,
 	})
+}
+
+/// Holds imported connection details to the host form's rules, and refuses values starting
+/// with `-` so nothing in a shared file can be read by `ssh` as an option.
+fn clean_connection(
+	alias: &str,
+	connection: ConnectionEntry,
+) -> Result<Option<ConnectionEntry>, NotesError> {
+	let invalid = |field| NotesError::InvalidField {
+		alias: alias.to_string(),
+		field,
+	};
+	let value = |value: Option<String>, max_chars: usize, field| match value {
+		None => Ok(None),
+		Some(value) => {
+			let value = value.trim().to_string();
+			if value.chars().count() > max_chars || value.starts_with('-') {
+				Err(invalid(field))
+			}
+			else {
+				Ok((!value.is_empty()).then_some(value))
+			}
+		}
+	};
+
+	let connection = ConnectionEntry {
+		host_name: value(connection.host_name, MAX_CONNECTION_VALUE_CHARS, "address")?,
+		user: value(connection.user, MAX_CONNECTION_VALUE_CHARS, "user")?,
+		port: connection.port,
+		identity_file: value(
+			connection.identity_file,
+			MAX_IDENTITY_FILE_CHARS,
+			"key file",
+		)?,
+		proxy_jump: value(
+			connection.proxy_jump,
+			MAX_CONNECTION_VALUE_CHARS,
+			"jump host",
+		)?,
+	};
+	connection
+		.to_input(alias, HostMeta::default())
+		.validate()
+		.map_err(|error| match error {
+			EditError::InvalidField(field) => invalid(field),
+			_ => NotesError::InvalidAlias(alias.to_string()),
+		})?;
+
+	Ok((connection != ConnectionEntry::default()).then_some(connection))
 }
 
 fn clean_optional(value: Option<String>, max_chars: usize) -> Result<Option<String>, ()> {
@@ -315,15 +465,25 @@ fn clean_optional(value: Option<String>, max_chars: usize) -> Result<Option<Stri
 	}
 }
 
-/// Splits the file's aliases into those that match an editable host here and those that do not.
+/// Sorts the file's aliases into hosts to update, hosts to add and names already used by a
+/// block Hop does not edit.
 pub fn preview_import(set: &ConfigSet, file: &NotesFile) -> ImportPreview {
 	let mut preview = ImportPreview::default();
-	for alias in file.hosts.keys() {
+	for (alias, entry) in &file.hosts {
 		if set.file_for_host(alias).is_some() {
 			preview.matched.push(alias.clone());
 		}
+		else if set.mentions_host(alias) {
+			preview.conflicting.push(alias.clone());
+		}
 		else {
-			preview.unknown.push(alias.clone());
+			let connection = entry.connection.as_ref();
+			preview.new.push(NewHost {
+				name: alias.clone(),
+				host_name: connection.and_then(|connection| connection.host_name.clone()),
+				identity_file: connection.and_then(|connection| connection.identity_file.clone()),
+				key_missing: false,
+			});
 		}
 	}
 
@@ -376,30 +536,45 @@ fn merge_lists<T: Clone + PartialEq>(current: &[T], incoming: &[T]) -> Vec<T> {
 	merged
 }
 
-/// Applies the file to every config file it touches. Returns the index into `set.files` and the
-/// edited document for each file that changed, so the caller can save each one once.
+/// Applies the file to every config file it touches. With `add_new`, hosts that are not in the
+/// config yet are added to the main file, dated `today` unless the file has an added date.
+/// Returns the index into `set.files` and the edited document for each file that changed, so
+/// the caller can save each one once.
 pub fn apply_import(
 	set: &ConfigSet,
 	file: &NotesFile,
 	mode: ListMode,
+	add_new: bool,
+	today: &str,
 ) -> Result<Vec<(usize, Document)>, EditError> {
 	let mut changed: Vec<(usize, Document)> = Vec::new();
-	for (alias, entry) in &file.hosts {
-		let Some(index) = set
-			.files
-			.iter()
-			.position(|loaded| loaded.doc.find_host(alias).is_some())
-		else {
-			continue;
-		};
-
-		let slot = match changed.iter().position(|(i, _)| *i == index) {
+	let mut doc_for = |index: usize| -> usize {
+		match changed.iter().position(|(i, _)| *i == index) {
 			Some(slot) => slot,
 			None => {
 				changed.push((index, set.files[index].doc.clone()));
 				changed.len() - 1
 			}
-		};
+		}
+	};
+	let mut edits: Vec<(usize, &String, &NoteEntry)> = Vec::new();
+	let mut additions: Vec<(&String, &NoteEntry)> = Vec::new();
+	for (alias, entry) in &file.hosts {
+		if let Some(index) = set
+			.files
+			.iter()
+			.position(|loaded| loaded.doc.find_host(alias).is_some())
+		{
+			edits.push((doc_for(index), alias, entry));
+		}
+		else if add_new && !set.mentions_host(alias) && !set.files.is_empty() {
+			additions.push((alias, entry));
+		}
+	}
+
+	// New hosts always go in the main config, never an included file.
+	let main_slot = (!additions.is_empty()).then(|| doc_for(0));
+	for (slot, alias, entry) in edits {
 		let doc = &mut changed[slot].1;
 		let block = doc
 			.find_host(alias)
@@ -412,6 +587,19 @@ pub fn apply_import(
 		let mut input = HostInput::from_block(block);
 		input.meta = meta;
 		doc.update_host(alias, &input)?;
+	}
+
+	if let Some(slot) = main_slot {
+		let doc = &mut changed[slot].1;
+		for (alias, entry) in additions {
+			let mut meta = merge_meta(&HostMeta::default(), entry, ListMode::Overwrite);
+			meta.added = meta.added.or_else(|| Some(today.to_string()));
+			let input = match &entry.connection {
+				Some(connection) => connection.to_input(alias, meta),
+				None => ConnectionEntry::default().to_input(alias, meta),
+			};
+			doc.add_host(&input)?;
+		}
 	}
 
 	changed.retain(|(index, doc)| doc.to_text() != set.files[*index].doc.to_text());
@@ -446,7 +634,7 @@ mod tests {
 
 	#[test]
 	fn exports_notes_only_for_editable_hosts_with_notes() {
-		let file = export_notes(&set_of(&[CONFIG]));
+		let file = export_notes(&set_of(&[CONFIG]), false);
 		assert_eq!(file.version, 1);
 		assert_eq!(file.hosts.keys().collect::<Vec<_>>(), vec!["nas"]);
 		let json = to_json(&file);
@@ -460,7 +648,7 @@ mod tests {
 		              Host web\n\t# tags: work\n\nHost bare\n";
 		let set = set_of(&[config]);
 		let aliases = |selection: ExportSelection| {
-			export_selected(&set, &selection)
+			export_selected(&set, &selection, false)
 				.hosts
 				.into_keys()
 				.collect::<Vec<_>>()
@@ -491,16 +679,56 @@ mod tests {
 
 	#[test]
 	fn export_round_trips_through_parse() {
-		let file = export_notes(&set_of(&[CONFIG]));
+		let file = export_notes(&set_of(&[CONFIG]), false);
 		assert_eq!(parse_notes(&to_json(&file)).unwrap(), file);
+		let file = export_notes(&set_of(&[CONFIG]), true);
+		assert_eq!(parse_notes(&to_json(&file)).unwrap(), file);
+	}
+
+	#[test]
+	fn exports_connection_details_only_when_asked() {
+		let set = set_of(&[CONFIG]);
+		let notes_only = export_notes(&set, false);
+		assert_eq!(notes_only.version, 1);
+		assert!(!to_json(&notes_only).contains("connection"));
+
+		let file = export_notes(&set, true);
+		assert_eq!(file.version, 2);
+		// A host with an address but no notes is now worth exporting.
+		assert_eq!(file.hosts.keys().collect::<Vec<_>>(), vec!["bare", "nas"]);
+		let nas = file.hosts["nas"].connection.as_ref().unwrap();
+		assert_eq!(nas.host_name.as_deref(), Some("10.0.0.2"));
+		assert_eq!(nas.user, None);
+
+		// Choosing only hosts without connection details still writes a version 1 file.
+		let config = "Host nas\n\t# tags: home\n\nHost web\n\tHostName web.example\n";
+		let tags = vec!["home".to_string()];
+		let file = export_selected(&set_of(&[config]), &ExportSelection::Tags { tags }, true);
+		assert_eq!(file.version, 1);
+	}
+
+	#[test]
+	fn exports_key_paths_never_keys() {
+		let config = "Host nas\n\tHostName 10.0.0.2\n\tUser dan\n\tPort 2222\n\
+		              \tIdentityFile \"~/.ssh/my key\"\n\tProxyJump bastion\n";
+		let json = to_json(&export_notes(&set_of(&[config]), true));
+		assert!(json.contains("\"identityFile\": \"~/.ssh/my key\""));
+		assert!(json.contains("\"port\": 2222"));
+		assert!(json.contains("\"proxyJump\": \"bastion\""));
 	}
 
 	#[test]
 	fn refuses_wrong_version_and_unknown_fields() {
 		assert_eq!(
-			parse_notes(r#"{"version":2,"hosts":{}}"#),
-			Err(NotesError::UnsupportedVersion(2))
+			parse_notes(r#"{"version":3,"hosts":{}}"#),
+			Err(NotesError::UnsupportedVersion(3))
 		);
+		assert!(parse_notes(r#"{"version":1,"hosts":{}}"#).is_ok());
+		assert!(parse_notes(r#"{"version":2,"hosts":{}}"#).is_ok());
+		assert!(matches!(
+			parse_notes(r#"{"version":2,"hosts":{"nas":{"connection":{"password":"x"}}}}"#),
+			Err(NotesError::Malformed(_))
+		));
 		assert!(matches!(
 			parse_notes(r#"{"hosts":{}}"#),
 			Err(NotesError::Malformed(_))
@@ -538,6 +766,40 @@ mod tests {
 	}
 
 	#[test]
+	fn refuses_connection_details_that_could_inject_options() {
+		let bad = [
+			r#"{"hostName":"a b"}"#,
+			r#"{"hostName":"x\nProxyCommand calc"}"#,
+			r#"{"hostName":"-oProxyCommand=calc"}"#,
+			r#"{"user":"me#x"}"#,
+			r#"{"user":"-l"}"#,
+			r#"{"proxyJump":"-oProxyCommand=calc"}"#,
+			r#"{"proxyJump":"a b"}"#,
+			r#"{"identityFile":"key\"\nProxyCommand calc"}"#,
+			r#"{"port":0}"#,
+		];
+		for connection in bad {
+			let text =
+				format!(r#"{{"version":2,"hosts":{{"nas":{{"connection":{connection}}}}}}}"#);
+			assert!(
+				matches!(parse_notes(&text), Err(NotesError::InvalidField { .. })),
+				"{connection} was accepted"
+			);
+		}
+
+		let text = r#"{"version":2,"hosts":{"nas":{"connection":
+			{"hostName":" 10.0.0.2 ","user":"","identityFile":"~/.ssh/my key"}}}}"#;
+		let file = parse_notes(text).unwrap();
+		let connection = file.hosts["nas"].connection.as_ref().unwrap();
+		assert_eq!(connection.host_name.as_deref(), Some("10.0.0.2"));
+		assert_eq!(connection.user, None);
+		assert_eq!(connection.identity_file.as_deref(), Some("~/.ssh/my key"));
+
+		let empty = r#"{"version":2,"hosts":{"nas":{"connection":{"user":""}}}}"#;
+		assert_eq!(parse_notes(empty).unwrap().hosts["nas"].connection, None);
+	}
+
+	#[test]
 	fn cleans_notes_so_they_cannot_inject_options() {
 		let text = r#"{"version":1,"hosts":{"nas":{
 			"description":"nice\nProxyCommand calc",
@@ -549,11 +811,17 @@ mod tests {
 	}
 
 	#[test]
-	fn previews_matched_and_unknown_aliases() {
-		let text = r#"{"version":1,"hosts":{"nas":{},"web1":{},"elsewhere":{}}}"#;
+	fn previews_matched_new_and_conflicting_aliases() {
+		let text = r#"{"version":2,"hosts":{"nas":{},"web1":{},"elsewhere":{},
+			"pi":{"connection":{"hostName":"10.0.0.9","identityFile":"~/.ssh/pi"}}}}"#;
 		let preview = preview_import(&set_of(&[CONFIG]), &parse_notes(text).unwrap());
 		assert_eq!(preview.matched, vec!["nas"]);
-		assert_eq!(preview.unknown, vec!["elsewhere", "web1"]);
+		assert_eq!(preview.conflicting, vec!["web1"]);
+		let new: Vec<_> = preview.new.iter().map(|host| host.name.as_str()).collect();
+		assert_eq!(new, vec!["elsewhere", "pi"]);
+		assert_eq!(preview.new[0].host_name, None);
+		assert_eq!(preview.new[1].host_name.as_deref(), Some("10.0.0.9"));
+		assert_eq!(preview.new[1].identity_file.as_deref(), Some("~/.ssh/pi"));
 	}
 
 	#[test]
@@ -582,7 +850,8 @@ mod tests {
 			"nas":{"tags":["storage"],"favourite":true},
 			"pi":{"description":"Garden"},
 			"ghost":{"description":"never added"}}}"#;
-		let changed = apply_import(&set, &parse_notes(text).unwrap(), ListMode::Merge).unwrap();
+		let notes = parse_notes(text).unwrap();
+		let changed = apply_import(&set, &notes, ListMode::Merge, false, TODAY).unwrap();
 		assert_eq!(changed.len(), 2);
 
 		let main = &changed.iter().find(|(index, _)| *index == 0).unwrap().1;
@@ -603,8 +872,82 @@ mod tests {
 	#[test]
 	fn unchanged_notes_produce_no_save() {
 		let set = set_of(&[CONFIG]);
-		let file = export_notes(&set);
-		let changed = apply_import(&set, &file, ListMode::Overwrite).unwrap();
+		let file = export_notes(&set, true);
+		let changed = apply_import(&set, &file, ListMode::Overwrite, true, TODAY).unwrap();
+		assert!(changed.is_empty());
+	}
+
+	const TODAY: &str = "2026-11-13";
+
+	#[test]
+	fn adds_missing_hosts_to_the_main_file() {
+		let set = set_of(&[
+			"Host nas\n\tHostName 10.0.0.2\n\nHost *\n\tUser me\n",
+			"Host pi\n\tHostName 10.0.0.9\n",
+		]);
+		let text = r#"{"version":2,"hosts":{
+			"nas":{"description":"Synology"},
+			"web":{"description":"Work site","tags":["work"],"added":"2024-02-02",
+				"connection":{"hostName":"web.example","user":"dan","port":2222,
+					"identityFile":"~/.ssh/work key","proxyJump":"bastion"}},
+			"old":{"description":"From a version 1 file"}}}"#;
+		let notes = parse_notes(text).unwrap();
+		let changed = apply_import(&set, &notes, ListMode::Merge, true, TODAY).unwrap();
+		assert_eq!(changed.len(), 1);
+		let (index, main) = &changed[0];
+		assert_eq!(*index, 0);
+
+		let web = main.find_host("web").unwrap();
+		assert_eq!(web.option("hostname"), Some("web.example"));
+		assert_eq!(web.option("user"), Some("dan"));
+		assert_eq!(web.option("port"), Some("2222"));
+		assert_eq!(web.option("identityfile"), Some("\"~/.ssh/work key\""));
+		assert_eq!(web.option("proxyjump"), Some("bastion"));
+		assert_eq!(web.meta.tags, vec!["work"]);
+		assert_eq!(web.meta.added.as_deref(), Some("2024-02-02"));
+
+		let old = main.find_host("old").unwrap();
+		assert_eq!(old.option("hostname"), None);
+		assert_eq!(
+			old.meta.description.as_deref(),
+			Some("From a version 1 file")
+		);
+		assert_eq!(old.meta.added.as_deref(), Some(TODAY));
+
+		assert_eq!(
+			main.find_host("nas").unwrap().meta.description.as_deref(),
+			Some("Synology")
+		);
+		// `Host *` stays last so it still supplies defaults.
+		assert!(main.to_text().trim_end().ends_with("Host *\n\tUser me"));
+	}
+
+	#[test]
+	fn skips_new_hosts_when_not_asked_and_names_already_in_use() {
+		let set = set_of(&[CONFIG]);
+		let text = r#"{"version":2,"hosts":{
+			"web1":{"connection":{"hostName":"other.example"}},
+			"ghost":{"connection":{"hostName":"ghost.example"}}}}"#;
+		let notes = parse_notes(text).unwrap();
+		assert!(apply_import(&set, &notes, ListMode::Merge, false, TODAY)
+			.unwrap()
+			.is_empty());
+
+		let changed = apply_import(&set, &notes, ListMode::Merge, true, TODAY).unwrap();
+		let main = &changed[0].1;
+		assert!(main.find_host("ghost").is_some());
+		assert!(main
+			.to_text()
+			.contains("Host web1 web2\n\t# desc: shared\n"));
+		assert!(!main.to_text().contains("other.example"));
+	}
+
+	#[test]
+	fn connection_details_never_change_existing_hosts() {
+		let set = set_of(&[CONFIG]);
+		let text = r#"{"version":2,"hosts":{"nas":{"connection":{"hostName":"evil.example"}}}}"#;
+		let notes = parse_notes(text).unwrap();
+		let changed = apply_import(&set, &notes, ListMode::Merge, true, TODAY).unwrap();
 		assert!(changed.is_empty());
 	}
 }

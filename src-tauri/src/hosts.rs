@@ -86,7 +86,7 @@ fn owned(block: &Block, key: &str) -> Option<String> {
 }
 
 /// Hop only checks that key files exist; it never opens them.
-fn missing_keys(identity_files: &[String]) -> Vec<String> {
+pub fn missing_keys(identity_files: &[String]) -> Vec<String> {
 	identity_files
 		.iter()
 		.filter(|path| !path.contains('%') && !path.eq_ignore_ascii_case("none"))

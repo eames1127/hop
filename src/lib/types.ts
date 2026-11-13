@@ -128,10 +128,21 @@ export type ExportSelection =
 	| { kind: "hosts"; names: string[] }
 	| { kind: "tags"; tags: string[] };
 
+// A host the import would add. Only the key file's path comes from the file, never the key.
+export interface NewImportHost {
+	name: string;
+	hostName: string | null;
+	identityFile: string | null;
+	// No key at that path on this computer yet.
+	keyMissing: boolean;
+}
+
 export interface NotesImportPreview {
 	fileName: string;
 	matched: string[];
-	unknown: string[];
+	new: NewImportHost[];
+	// Named by a block Hop does not edit, so they are skipped.
+	conflicting: string[];
 }
 
 export interface KeyInfo {

@@ -2,7 +2,7 @@ import type { ExportSelection, Host, HostMeta } from "./types";
 
 export type ExportMode = ExportSelection["kind"];
 
-// Mirrors the Rust export, which leaves out read-only blocks and hosts without notes.
+// Mirrors the Rust export, which leaves out read-only blocks and hosts with nothing to export.
 function hasNotes(meta: HostMeta): boolean {
 	return meta.description !== null
 		|| meta.tags.length > 0
@@ -11,8 +11,15 @@ function hasNotes(meta: HostMeta): boolean {
 		|| meta.added !== null;
 }
 
-export function exportableHosts(hosts: Host[]): Host[] {
-	return hosts.filter((host) => host.editable && hasNotes(host.meta));
+function hasConnection(host: Host): boolean {
+	return [host.hostName, host.user, host.port, host.proxyJump]
+		.some((value) => value !== null && value.trim() !== "")
+		|| host.identityFiles.length > 0;
+}
+
+export function exportableHosts(hosts: Host[], includeConnection = false): Host[] {
+	return hosts.filter((host) => host.editable
+		&& (hasNotes(host.meta) || (includeConnection && hasConnection(host))));
 }
 
 export function buildSelection(
@@ -42,6 +49,12 @@ function isSelected(host: Host, selection: ExportSelection): boolean {
 }
 
 // How many hosts the export would write, shown before the save dialog opens.
-export function selectionCount(hosts: Host[], selection: ExportSelection): number {
-	return exportableHosts(hosts).filter((host) => isSelected(host, selection)).length;
+export function selectionCount(
+	hosts: Host[],
+	selection: ExportSelection,
+	includeConnection = false,
+): number {
+	return exportableHosts(hosts, includeConnection)
+		.filter((host) => isSelected(host, selection))
+		.length;
 }

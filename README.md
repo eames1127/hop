@@ -20,6 +20,10 @@ click. It runs on Windows and Kubuntu (KDE Plasma), has no server, and keeps you
 - SSH keys in settings: list your public keys with their fingerprints, make a new key with
   `ssh-keygen`, and add another computer's public key to the `authorized_keys` of chosen hosts.
   Each computer keeps its own key; Hop never reads or moves a private key.
+- Export hosts to a JSON file and import them on another computer. The file holds notes and,
+  unless you leave them out, addresses, users, ports, jump hosts and key file *paths*. Importing
+  updates hosts you already have and can add the ones you don't. Keys are never copied, so the
+  import flags any host whose key file isn't on this computer yet.
 - Light and dark themes.
 
 ## How Hop stores its notes
