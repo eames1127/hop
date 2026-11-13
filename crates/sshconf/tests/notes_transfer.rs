@@ -165,7 +165,8 @@ fn a_notes_only_file_adds_hosts_without_addresses() {
 	)
 	.unwrap();
 	let text = changed[0].1.to_text();
-	assert!(text.contains("Host nas\n"));
+	// A new config takes the platform's line ending, so this must hold for CRLF too.
+	assert!(has_line(&text, "Host nas"), "{text}");
 	assert!(text.contains("# desc: Work box"));
 	assert!(!text.contains("HostName"));
 
