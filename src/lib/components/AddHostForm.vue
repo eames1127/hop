@@ -128,7 +128,7 @@ async function submit(): Promise<void> {
 					<span>Address</span>
 					<input
 						v-model="form.hostName"
-						placeholder="192.168.1.20 or nas.lan"
+						placeholder="192.168.0.10 or nas.lan"
 						spellcheck="false"
 					>
 					<small

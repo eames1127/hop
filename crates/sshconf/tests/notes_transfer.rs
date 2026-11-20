@@ -19,8 +19,8 @@ Host nas
 	# fav: true
 	# forward: 5001:localhost:5001 Admin UI
 	# added: 2024-01-01
-	HostName 192.168.1.20
-	User dan
+	HostName 192.0.2.20
+	User alex
 	Port 2222
 	IdentityFile \"~/.ssh/home key\"
 
@@ -126,8 +126,8 @@ fn hosts_move_to_a_computer_that_has_none_of_them() {
 		eprintln!("ssh is not installed; skipping the OpenSSH checks");
 		return;
 	};
-	assert!(has_line(&nas, "hostname 192.168.1.20"), "{nas}");
-	assert!(has_line(&nas, "user dan"), "{nas}");
+	assert!(has_line(&nas, "hostname 192.0.2.20"), "{nas}");
+	assert!(has_line(&nas, "user alex"), "{nas}");
 	assert!(has_line(&nas, "port 2222"), "{nas}");
 	// `ssh -G` prints key paths unexpanded; the space survives the quoting.
 	assert!(has_line(&nas, "identityfile ~/.ssh/home key"), "{nas}");
@@ -149,7 +149,7 @@ fn a_notes_only_file_adds_hosts_without_addresses() {
 		false,
 	));
 	assert!(exported.contains("\"version\": 1"));
-	assert!(!exported.contains("192.168.1.20"));
+	assert!(!exported.contains("192.0.2.20"));
 	assert!(!exported.contains("id_work"));
 
 	let new = tempfile::tempdir().unwrap();

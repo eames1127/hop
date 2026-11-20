@@ -709,7 +709,7 @@ mod tests {
 
 	#[test]
 	fn exports_key_paths_never_keys() {
-		let config = "Host nas\n\tHostName 10.0.0.2\n\tUser dan\n\tPort 2222\n\
+		let config = "Host nas\n\tHostName 10.0.0.2\n\tUser alex\n\tPort 2222\n\
 		              \tIdentityFile \"~/.ssh/my key\"\n\tProxyJump bastion\n";
 		let json = to_json(&export_notes(&set_of(&[config]), true));
 		assert!(json.contains("\"identityFile\": \"~/.ssh/my key\""));
@@ -888,7 +888,7 @@ mod tests {
 		let text = r#"{"version":2,"hosts":{
 			"nas":{"description":"Synology"},
 			"web":{"description":"Work site","tags":["work"],"added":"2024-02-02",
-				"connection":{"hostName":"web.example","user":"dan","port":2222,
+				"connection":{"hostName":"web.example","user":"alex","port":2222,
 					"identityFile":"~/.ssh/work key","proxyJump":"bastion"}},
 			"old":{"description":"From a version 1 file"}}}"#;
 		let notes = parse_notes(text).unwrap();
@@ -899,7 +899,7 @@ mod tests {
 
 		let web = main.find_host("web").unwrap();
 		assert_eq!(web.option("hostname"), Some("web.example"));
-		assert_eq!(web.option("user"), Some("dan"));
+		assert_eq!(web.option("user"), Some("alex"));
 		assert_eq!(web.option("port"), Some("2222"));
 		assert_eq!(web.option("identityfile"), Some("\"~/.ssh/work key\""));
 		assert_eq!(web.option("proxyjump"), Some("bastion"));

@@ -442,8 +442,8 @@ mod tests {
 
 	#[test]
 	fn parses_a_public_key_and_tidies_it() {
-		let key = PublicKey::parse(&format!("  {KEY}   dan@laptop  \n")).unwrap();
-		assert_eq!(key.line(), format!("{KEY} dan@laptop"));
+		let key = PublicKey::parse(&format!("  {KEY}   alex@laptop  \n")).unwrap();
+		assert_eq!(key.line(), format!("{KEY} alex@laptop"));
 		assert_eq!(PublicKey::parse(KEY).unwrap().line(), KEY);
 	}
 
@@ -472,7 +472,7 @@ mod tests {
 
 	#[test]
 	fn reads_ssh_keygen_fingerprints() {
-		let text = "256 SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU dan@laptop (ED25519)\n";
+		let text = "256 SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU alex@laptop (ED25519)\n";
 		assert_eq!(
 			parse_fingerprint(text),
 			Some((
@@ -588,7 +588,7 @@ mod tests {
 			"nas",
 			Some(255),
 			"",
-			"dan@nas: Permission denied (publickey).\n",
+			"alex@nas: Permission denied (publickey).\n",
 		);
 		assert_eq!(denied.outcome, AuthoriseOutcome::Failed);
 		assert!(denied.detail.unwrap().contains("Permission denied"));

@@ -95,11 +95,11 @@ mod tests {
 
 	#[test]
 	fn reads_ssh_g_output() {
-		let output = "host nas\nhostname 10.0.0.2\nuser dan\nport 2222\n\
+		let output = "host nas\nhostname 10.0.0.2\nuser alex\nport 2222\n\
 			identityfile ~/.ssh/id_ed25519\nproxyjump bastion\n";
 		let host = parse_ssh_g(output);
 		assert_eq!(host.host_name, "10.0.0.2");
-		assert_eq!(host.user.as_deref(), Some("dan"));
+		assert_eq!(host.user.as_deref(), Some("alex"));
 		assert_eq!(host.port, 2222);
 		assert_eq!(host.proxy_jump.as_deref(), Some("bastion"));
 		assert_eq!(host.identity_files, vec!["~/.ssh/id_ed25519"]);

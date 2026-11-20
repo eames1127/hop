@@ -38,8 +38,8 @@ Host nas
 	# fav: true
 	# forward: 5001:localhost:5001 Admin UI
 	# added: 2025-03-14
-	HostName 192.168.1.20
-	User dan
+	HostName 192.0.2.20
+	User alex
 ```
 
 `Host` blocks with a single plain alias are editable. Wildcard blocks (`Host *`), `Match`
