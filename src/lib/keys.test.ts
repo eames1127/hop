@@ -51,7 +51,7 @@ describe("targetNames", () => {
 
 describe("shellQuote", () => {
 	it("keeps text literal for a POSIX shell", () => {
-		expect(shellQuote("ssh-ed25519 AAAA dan@pc")).toBe("'ssh-ed25519 AAAA dan@pc'");
+		expect(shellQuote("ssh-ed25519 AAAA alex@pc")).toBe("'ssh-ed25519 AAAA alex@pc'");
 		expect(shellQuote("Ann's $(laptop)")).toBe("'Ann'\\''s $(laptop)'");
 	});
 });
