@@ -94,7 +94,7 @@ Hop never loses or reshuffles anything in your SSH config: it edits only the lin
 
 **Backups.** Before every write, Hop copies the file to `config.hop-backup-<timestamp>` and keeps the last 10. It then writes to a temporary file and swaps it in, so a crash mid-save can't leave a half-written config.
 
-**History** is kept outside the config, in a small SQLite file in Hop's app data folder: host name, time and session length only. Nothing else is recorded, and it can be cleared from settings.
+**History** is kept outside the config, in a small SQLite file in Hop's app data folder: host name and connection time only. Hop hands the session to the terminal, so it never sees how long a session lasts. Nothing else is recorded, and it can be cleared from settings.
 
 ## Security
 
@@ -271,7 +271,7 @@ The biggest risk is a save that damages the config; backups, atomic writes and r
 
 **Open questions**
 
-- [ ] Should both machines share one SSH config (through a private dotfiles repo), or keep separate configs?
-- [ ] Konsole only, or a setting for other terminals on the laptop (Yakuake, Kitty)?
-- [ ] Should a missing or broken host be hidden, or always shown with a warning?
-- [ ] Should Hop start with the computer by default, or only when switched on in settings?
+- [ ] Should both machines share one SSH config (through a private dotfiles repo), or keep separate configs? Hop supports either: it keeps each file's line endings and `~/.ssh/...` key paths for a shared config, and export and import carry notes and host details between separate ones.
+- [x] Konsole only, or a setting for other terminals on the laptop (Yakuake, Kitty)? A setting: Konsole by default, with Kitty and XTerm available. Yakuake waits until after v1.
+- [x] Should a missing or broken host be hidden, or always shown with a warning? Always shown, with a flag and an entry in the **Needs attention** list.
+- [x] Should Hop start with the computer by default, or only when switched on in settings? Only when switched on in settings; it is off by default.

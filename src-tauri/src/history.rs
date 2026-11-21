@@ -1,4 +1,7 @@
-//! Connection history in a small SQLite file: host name, start time and session length only.
+//! Connection history in a small SQLite file: host name and start time only.
+//!
+//! `duration_secs` is never written, because the session runs in the user's terminal and Hop
+//! cannot see when it ends. It stays in the schema so existing history files keep opening.
 
 use std::collections::HashMap;
 use std::path::Path;
