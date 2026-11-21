@@ -275,4 +275,3 @@ The biggest risk is a save that damages the config; backups, atomic writes and r
 - [ ] Konsole only, or a setting for other terminals on the laptop (Yakuake, Kitty)?
 - [ ] Should a missing or broken host be hidden, or always shown with a warning?
 - [ ] Should Hop start with the computer by default, or only when switched on in settings?
-- [ ] Public or private repo?
