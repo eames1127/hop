@@ -67,7 +67,7 @@ Download the installer from the [releases page](https://github.com/eames1127/hop
 
 ## Development
 
-You need Node.js 22+, pnpm 9, stable Rust, and nightly Rust's `rustfmt` for formatting. On Linux,
+You need Node.js 22+, pnpm 10, stable Rust, and nightly Rust's `rustfmt` for formatting. On Linux,
 install Tauri's packages:
 
 ```bash
@@ -103,7 +103,7 @@ ESLint, Prettier (CSS only) and rustfmt, and checked in CI. Vue components keep 
    - The Microsoft C++ Build Tools with the "Desktop development with C++" workload.
    - The WebView2 runtime (already present on Windows 11).
    - Node.js 22 or later.
-   - pnpm 9.15.9: `npm install -g pnpm@9.15.9`. Avoid `corepack enable`, which often fails
+   - pnpm 10.34.9: `npm install -g pnpm@10.34.9`. Avoid `corepack enable`, which often fails
      with `EPERM` because it writes into the Node install folder.
 2. Close and reopen your terminals (and editor) after installing Rust, so `cargo` is on `PATH`.
 3. From the repository folder:
