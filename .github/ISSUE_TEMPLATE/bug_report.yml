@@ -1,0 +1,94 @@
+name: Bug report
+description: Something in Hop doesn't work as it should.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing Hop.
+
+        **Issues are public.** Please don't paste your SSH config, real hostnames or IP addresses,
+        usernames, or any key material (public or private). Swap real values for placeholders such
+        as `example-host`, `192.0.2.10` and `user`.
+
+        For a security problem, don't open an issue: use the **Security** tab and choose
+        **Report a vulnerability** instead.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I have left out my SSH config, real hostnames, IP addresses, usernames and any keys, and used placeholders instead.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: Hop version
+      description: Shown in settings, for example 0.9.0.
+      placeholder: 0.9.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Kubuntu
+        - Other Linux
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      description: For example Windows 11 24H2, Kubuntu 24.04, or your Linux distribution and its version.
+    validations:
+      required: true
+  - type: dropdown
+    id: terminal
+    attributes:
+      label: Terminal
+      options:
+        - Windows Terminal
+        - PowerShell
+        - Konsole
+        - Kitty
+        - XTerm
+        - Not relevant
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Add a host called example-host with address 192.0.2.10
+        2. Click Connect
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: backup
+    attributes:
+      label: Did you need a config backup?
+      description: Hop saves backups as `config.hop-backup-<timestamp>` next to your SSH config.
+      options:
+        - "No"
+        - Yes, I restored a backup
+        - Yes, but I fixed the config by hand
+    validations:
+      required: true
