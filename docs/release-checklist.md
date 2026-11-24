@@ -31,7 +31,7 @@ they pass on the copy.
 
 - [ ] Windows: the NSIS `.exe` installs (SmartScreen warns, as it's unsigned) and Hop appears in
       the Start menu.
-- [ ] Kubuntu: `sudo apt install ./hop_*.deb` installs and Hop appears in the application menu.
+- [ ] Kubuntu: `sudo apt install ./Hop_*.deb` installs and Hop appears in the application menu.
 - [ ] Kubuntu: the AppImage starts after `chmod +x`.
 - [ ] Hop reports the expected version (e.g. in Apps & features or `apt show hop`).
 - [ ] Uninstalling removes the app and leaves `~/.ssh/config` and its backups untouched.

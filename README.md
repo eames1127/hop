@@ -89,7 +89,7 @@ tray menu to exit.
 Download the installer from the [releases page](https://github.com/eames1127/hop/releases):
 
 - **Windows:** the `.exe` (NSIS) installer. It is unsigned, so SmartScreen warns the first time.
-- **Kubuntu:** the `.deb` (`sudo apt install ./hop_*.deb`), or the AppImage as a spare.
+- **Kubuntu:** the `.deb` (`sudo apt install ./Hop_*.deb`), or the AppImage as a spare.
 
 ## Development
 
