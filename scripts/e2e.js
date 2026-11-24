@@ -1,12 +1,13 @@
 // End-to-end smoke test for the Windows debug build. It launches the built app against a copy of
 // e2e/fixtures/ssh, drives the WebView2 page over the Chrome DevTools Protocol and checks that
-// cards render, search filters and an invalid host name is refused. It uses only Node's built-in
+// cards render, search filters, an invalid host name is refused, and adding, editing, starring and
+// deleting a host each rewrite only that host's block, with a backup. It uses only Node's built-in
 // fetch and WebSocket (Node 22+), so it adds no dependencies.
 //
 // Build first with `pnpm tauri build --debug --no-bundle`, then run `pnpm test:e2e`.
 
 import { spawn, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -98,7 +99,158 @@ function typeInto(selector, text) {
 	})()`;
 }
 
+// Fills a form field found by its visible label, since the inputs carry no names or ids.
+function fillField(label, text) {
+	const wanted = JSON.stringify(label);
+	return `(() => {
+		const field = [...document.querySelectorAll(".dialog label.field")]
+			.find((candidate) => candidate.querySelector("span")?.textContent.trim() === ${wanted});
+		const input = field.querySelector("input, textarea");
+		input.value = ${JSON.stringify(text)};
+		input.dispatchEvent(new Event("input", { bubbles: true }));
+		return true;
+	})()`;
+}
+
+function clickButton(scope, text) {
+	return `[...document.querySelectorAll(${JSON.stringify(`${scope} button`)})]
+		.find((button) => button.textContent.trim() === ${JSON.stringify(text)}).click()`;
+}
+
+function cardSelector(name) {
+	const wanted = JSON.stringify(name);
+	return `[...document.querySelectorAll(".host-card")]
+		.find((card) => card.querySelector(".host-card__name").textContent.trim() === ${wanted})`;
+}
+
 const countCards = "document.querySelectorAll('.host-card').length";
+
+// Splits a config into its `Host` blocks, keyed by alias, so a check can say exactly which
+// block a save changed and that every other block kept its bytes.
+function hostBlocks(text) {
+	const blocks = new Map();
+	let current = null;
+	for (const line of text.split(/(?<=\n)/)) {
+		const match = /^Host\s+(\S+)/.exec(line);
+		if (match) {
+			current = match[1];
+			blocks.set(current, "");
+		}
+		if (current !== null) {
+			blocks.set(current, blocks.get(current) + line);
+		}
+	}
+	return blocks;
+}
+
+function readConfig(sshDir) {
+	return readFileSync(join(sshDir, "config"), "utf8");
+}
+
+function backups(sshDir) {
+	return readdirSync(sshDir)
+		.filter((name) => name.startsWith("config.hop-backup-"))
+		.sort();
+}
+
+// Fails unless the only blocks that differ between the two configs are the named ones.
+function expectOnlyChanged(before, after, changed, action) {
+	const old = hostBlocks(before);
+	const fresh = hostBlocks(after);
+	for (const name of new Set([...old.keys(), ...fresh.keys()])) {
+		if (changed.includes(name)) {
+			continue;
+		}
+		// A new block is appended after a blank line, which the splitter files under the block
+		// before it, so trailing blank lines are separators rather than part of a block.
+		const trim = (block) => block?.replace(/(\r?\n)+$/, "");
+		if (trim(old.get(name)) !== trim(fresh.get(name))) {
+			throw new Error(`${action} changed the ${name} block as well`);
+		}
+	}
+}
+
+async function waitForConfig(sshDir, description, check) {
+	return waitFor(description, () => {
+		const text = readConfig(sshDir);
+		return check(text) ? text : null;
+	});
+}
+
+async function checkConfigWrites(page, sshDir) {
+	const original = readConfig(sshDir);
+
+	await page.evaluate(clickButton(".toolbar", "Add host"));
+	await waitFor("the add host form", () => page.evaluate("!!document.querySelector('.dialog')"));
+	await page.evaluate(fillField("Name", "delta-new"));
+	await page.evaluate(fillField("Address", "192.0.2.40"));
+	await page.evaluate(fillField("User", "tester"));
+	await page.evaluate(fillField("Description", "Added by the smoke test"));
+	await page.evaluate("document.querySelector('.dialog button[type=submit]').click()");
+	await waitFor("a fourth card", async () => (await page.evaluate(countCards)) === 4);
+	const added = await waitForConfig(sshDir, "the new block", (text) => {
+		return hostBlocks(text).get("delta-new")
+			?.includes("192.0.2.40");
+	});
+	expectOnlyChanged(original, added, ["delta-new"], "Adding a host");
+	const firstBackups = backups(sshDir);
+	if (firstBackups.length !== 1) {
+		throw new Error(`Expected one backup after adding a host, found ${firstBackups.length}`);
+	}
+	if (readFileSync(join(sshDir, firstBackups[0]), "utf8") !== original) {
+		throw new Error("The backup does not hold the config as it was before the save");
+	}
+	console.log("ok - adding a host writes only its block and backs up the config first");
+
+	await page.evaluate(`${cardSelector("beta-db")}.click()`);
+	await waitFor("the beta-db details", () => page.evaluate(
+		"document.querySelector('.detail h2')?.textContent.trim() === 'beta-db'",
+	));
+	await page.evaluate(clickButton(".detail", "Edit"));
+	await waitFor("the edit form", () => page.evaluate("!!document.querySelector('.dialog')"));
+	await page.evaluate(fillField("Address", "192.0.2.21"));
+	await page.evaluate(fillField("Description", "Database, edited by the smoke test"));
+	await page.evaluate("document.querySelector('.dialog button[type=submit]').click()");
+	const edited = await waitForConfig(sshDir, "the edited block", (text) => {
+		return hostBlocks(text).get("beta-db")
+			?.includes("192.0.2.21");
+	});
+	expectOnlyChanged(added, edited, ["beta-db"], "Editing beta-db");
+	if (backups(sshDir).length !== 2) {
+		throw new Error(`Expected two backups after an edit, found ${backups(sshDir).length}`);
+	}
+	console.log("ok - editing a host changes only its block");
+
+	await page.evaluate(`${cardSelector("alpha-web")}.querySelector(".icon-button").click()`);
+	const starred = await waitForConfig(sshDir, "the favourite note", (text) => {
+		return hostBlocks(text).get("alpha-web")
+			?.includes("# fav: true");
+	});
+	expectOnlyChanged(edited, starred, ["alpha-web"], "Starring alpha-web");
+	console.log("ok - starring a host writes a favourite note to its block only");
+
+	// window.confirm is the page's own dialog, so the test can answer it without a native window.
+	await page.evaluate(`${cardSelector("gamma-cache")}.click()`);
+	await waitFor("the gamma-cache details", () => page.evaluate(
+		"document.querySelector('.detail h2')?.textContent.trim() === 'gamma-cache'",
+	));
+	await page.evaluate("window.confirm = () => false");
+	await page.evaluate(clickButton(".detail", "Delete"));
+	await sleep(1000);
+	if (readConfig(sshDir) !== starred) {
+		throw new Error("The config changed after a delete was cancelled");
+	}
+	console.log("ok - a cancelled delete leaves the config alone");
+
+	await page.evaluate("window.confirm = () => true");
+	await page.evaluate(clickButton(".detail", "Delete"));
+	await waitFor("three cards again", async () => (await page.evaluate(countCards)) === 3);
+	const deleted = await waitForConfig(sshDir, "the block to go", (text) => {
+		return !hostBlocks(text).has("gamma-cache");
+	});
+	expectOnlyChanged(starred, deleted, ["gamma-cache"], "Deleting gamma-cache");
+	console.log("ok - deleting a host removes only its block");
+}
 
 async function run(page, sshDir) {
 	await waitFor("three host cards", async () => {
@@ -131,6 +283,10 @@ async function run(page, sshDir) {
 		throw new Error("The config changed after an invalid host name was submitted");
 	}
 	console.log(`ok - an invalid host name is refused ("${error}")`);
+	await page.evaluate(clickButton(".dialog", "Cancel"));
+	await waitFor("the form to close", () => page.evaluate("!document.querySelector('.dialog')"));
+
+	await checkConfigWrites(page, sshDir);
 }
 
 function stop(app) {
