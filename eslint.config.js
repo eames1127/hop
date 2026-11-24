@@ -7,7 +7,16 @@ import tseslint from "typescript-eslint";
 // ESLint formats TS and Vue; Prettier only handles CSS (it cannot print stroustrup braces).
 export default tseslint.config(
 	{
-		ignores: ["dist/**", "src-tauri/**", "target/**", "crates/**", "node_modules/**"],
+		ignores: [
+			"dist/**",
+			"src-tauri/**",
+			"target/**",
+			"crates/**",
+			"node_modules/**",
+			// Claude Code keeps session worktrees here; each is a full checkout with its own
+			// tsconfig, which typescript-eslint refuses to choose between.
+			".claude/**",
+		],
 	},
 	js.configs.recommended,
 	...tseslint.configs.recommended,
