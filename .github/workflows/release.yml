@@ -49,3 +49,25 @@ jobs:
           releaseBody: Download the installer for your machine below.
           releaseDraft: true
           args: --bundles ${{ matrix.bundles }}
+
+  # The installers are unsigned, so publish SHA-256 checksums that testers can check a download
+  # against. Hashing the files downloaded back from the release covers exactly what users get.
+  # This job never checks out or runs repository code.
+  checksums:
+    name: Publish SHA-256 checksums
+    needs: release
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Hash the release's files and upload SHA256SUMS.txt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir assets
+          cd assets
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*'
+          # A rerun downloads the previous checksum file too; it must not hash itself.
+          rm -f SHA256SUMS.txt
+          sha256sum -- * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
