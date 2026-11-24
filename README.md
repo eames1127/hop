@@ -48,6 +48,32 @@ blocks and multi-alias hosts are shown read-only and never rewritten.
 Connection history (host name and time only) is kept in a small SQLite file in Hop's data folder
 (`%APPDATA%\dev.eames.hop` or `~/.local/share/dev.eames.hop`) and can be cleared in settings.
 
+## Privacy
+
+Hop has no server, no accounts, no telemetry and no analytics, and sends nothing anywhere. Its
+only network activity is a plain TCP connect to hosts in your own config for online checks (which
+can be turned off in settings), plus `ssh` itself when you connect, start a tunnel or add a key to
+a host.
+
+What Hop keeps on your computer:
+
+- **Connection history:** host name and start time only, in `history.sqlite3` in Hop's data
+  folder. Hop can't see when a session ends, so no duration is recorded. Clear it, or set how
+  long it's kept, in settings.
+- **Settings:** `settings.json` in the same data folder.
+- **Config backups:** before each save, Hop copies your SSH config to `config.hop-backup-*`
+  beside it, keeping the last 10.
+
+Hop lists your public keys but never reads, copies or moves a private key.
+
+An exported notes file can contain hostnames, addresses, usernames, ports, jump hosts and key
+file paths, unless you leave the connection details out when exporting. Treat it as personal
+data: don't share it or commit it anywhere public.
+
+Uninstalling Hop doesn't remove its data folder (`%APPDATA%\dev.eames.hop` or
+`~/.local/share/dev.eames.hop`) or the backups next to your SSH config (usually
+`~/.ssh/config.hop-backup-*`), so delete those by hand if you want them gone.
+
 ## Quick launch
 
 - **Windows:** press Ctrl+Shift+H.
