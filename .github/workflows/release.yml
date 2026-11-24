@@ -12,8 +12,45 @@ permissions:
 # never end up in a release.
 
 jobs:
+  # Runs before anything is built, so a tag that doesn't match the app's version fails in seconds
+  # instead of producing installers with the wrong version in their names.
+  prepare:
+    name: Check the version and read the release notes
+    runs-on: ubuntu-22.04
+    outputs:
+      notes: ${{ steps.notes.outputs.notes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tag matches the app version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(jq -r .version src-tauri/tauri.conf.json)"
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::Tag $TAG does not match version $version in tauri.conf.json"
+            exit 1
+          fi
+          echo "Tag $TAG matches version $version"
+      - name: Release notes from docs/releases
+        id: notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          file="docs/releases/$TAG.md"
+          delimiter="notes_$(openssl rand -hex 16)"
+          {
+            echo "notes<<$delimiter"
+            if [ -f "$file" ]; then
+              cat "$file"
+            else
+              echo "Download the installer for your machine below."
+            fi
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+
   release:
     name: Build installers (${{ matrix.os }})
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -46,8 +83,10 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Hop ${{ github.ref_name }}
-          releaseBody: Download the installer for your machine below.
+          releaseBody: ${{ needs.prepare.outputs.notes }}
           releaseDraft: true
+          # 0.x versions are betas, so GitHub marks them as pre-releases.
+          prerelease: ${{ startsWith(github.ref_name, 'v0.') }}
           args: --bundles ${{ matrix.bundles }}
 
   # The installers are unsigned, so publish SHA-256 checksums that testers can check a download
