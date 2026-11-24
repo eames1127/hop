@@ -1,0 +1,30 @@
+name: Feedback or idea
+description: General feedback on Hop, or an idea for a feature.
+title: "[Feedback]: "
+labels: ["feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for trying Hop. All feedback helps, big or small.
+
+        **Issues are public.** Please don't paste your SSH config, real hostnames or IP addresses,
+        usernames, or any key material (public or private). Use placeholders such as
+        `example-host` and `192.0.2.10` instead.
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Your feedback or idea
+      description: What you like, what's awkward, or what you'd like Hop to do.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it matters to you
+      description: Optional. How you'd use it, or what it would save you.
+  - type: input
+    id: setup
+    attributes:
+      label: Hop version and OS
+      description: Optional, for example 0.9.0 on Kubuntu 24.04.
